@@ -2,22 +2,27 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
 // Your web app's Firebase configuration
+// Values must be provided via environment variables in Tempo project settings.
 const firebaseConfig = {
-  apiKey: "AIzaSyBbv9cbzPDsYbc4ZVWvcTcP0HYq3SEgGZI",
-  authDomain: "invoice-app-8f146.firebaseapp.com",
-  projectId: "invoice-app-8f146",
-  storageBucket: "invoice-app-8f146.firebasestorage.app",
-  messagingSenderId: "856377315010",
-  appId: "1:856377315010:web:9fc63d18807a9c7101b55b",
-  measurementId: "G-05720M5P3S"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
 
-export { auth };
+export { auth, db, storage };

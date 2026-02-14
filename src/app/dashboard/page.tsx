@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,8 +22,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useFirestore } from "@/hooks/useFirestore";
+import { formatDistanceToNow } from "date-fns";
 
 export default function DashboardPage() {
+  const { stats, userFiles, loading } = useFirestore();
+  const recentUploads = userFiles ?? [];
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading dashboard...</div>;
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -31,15 +42,17 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link href="/dashboard/upload">
-            <Button>
+            <Button disabled={!stats || stats.creditsRemaining <= 0}>
               <Upload className="mr-2 h-4 w-4" />
               Upload Document
             </Button>
           </Link>
-          <Button variant="outline">
-            <Plus className="mr-2 h-4 w-4" />
-            New Template
-          </Button>
+          <Link href="/dashboard/templates/builder">
+            <Button variant="outline">
+              <Plus className="mr-2 h-4 w-4" />
+              New Template
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -51,9 +64,9 @@ export default function DashboardPage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,284</div>
+            <div className="text-2xl font-bold">{stats?.totalDocumentsProcessed || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-emerald-500 font-medium">+12%</span> from last month
+              <span className="text-emerald-500 font-medium">Lifetime</span> processed
             </p>
           </CardContent>
         </Card>
@@ -65,11 +78,16 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">850</div>
+            <div className="text-2xl font-bold">{stats?.creditsRemaining || 0}</div>
             <div className="w-full bg-secondary h-1.5 rounded-full mt-2">
-              <div className="bg-primary h-full rounded-full" style={{ width: '85%' }}></div>
+              <div 
+                className="bg-primary h-full rounded-full transition-all" 
+                style={{ width: `${Math.min(100, ((stats?.creditsRemaining || 0) / 1000) * 100)}%` }}
+              ></div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Renews in 12 days</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats?.subscriptionTier} Plan
+            </p>
           </CardContent>
         </Card>
         <Card className="hover:border-primary/50 transition-colors">
@@ -80,9 +98,9 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{stats?.activeTemplatesCount || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              3 created this week
+              Ready to use
             </p>
           </CardContent>
         </Card>
@@ -94,7 +112,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">99.8%</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Based on last 100 uploads
+              System Uptime
             </p>
           </CardContent>
         </Card>
@@ -107,60 +125,62 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Recent Uploads</CardTitle>
-                <CardDescription>Documents processed in the last 24 hours.</CardDescription>
+                <CardDescription>Documents processed recently.</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" className="gap-1">
-                View All <ArrowUpRight className="h-4 w-4" />
-              </Button>
+              <Link href="/dashboard/history">
+                <Button variant="ghost" size="sm" className="gap-1">
+                  View All <ArrowUpRight className="h-4 w-4" />
+                </Button>
+              </Link>
             </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { name: "Invoice_Q3_Acme_Corp.pdf", status: "Completed", date: "2 mins ago", type: "Invoice", size: "2.4 MB" },
-                { name: "Bank_Statement_Oct_2023.pdf", status: "Processing", date: "5 mins ago", type: "Bank Statement", size: "4.1 MB" },
-                { name: "Financial_Report_Q2.pdf", status: "Completed", date: "1 hour ago", type: "Report", size: "1.2 MB" },
-                { name: "Vendor_List_2023.xlsx", status: "Failed", date: "3 hours ago", type: "Vendor List", size: "0.8 MB" },
-                { name: "Receipts_Travel_Nov.pdf", status: "Completed", date: "5 hours ago", type: "Receipts", size: "5.6 MB" },
-              ].map((file, i) => (
-                <div key={i} className="flex items-center justify-between p-4 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors border border-transparent hover:border-border">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-background border border-border flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <div className="font-medium text-sm">{file.name}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span>{file.type}</span>
-                        <span className="h-1 w-1 bg-muted-foreground/30 rounded-full"></span>
-                        <span>{file.size}</span>
+              {recentUploads.slice(0, 5).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No recent uploads</div>
+              ) : (
+                recentUploads.slice(0, 5).map((file, i) => (
+                  <div key={file.id} className="flex items-center justify-between p-4 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors border border-transparent hover:border-border">
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-lg bg-background border border-border flex items-center justify-center">
+                        <FileText className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">{file.name}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span>{file.type?.split("/").pop() || "Document"}</span>
+                          <span className="h-1 w-1 bg-muted-foreground/30 rounded-full"></span>
+                          <span>{typeof file.size === "number" ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "Unknown size"}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="hidden sm:flex items-center gap-2">
-                      {file.status === "Completed" && <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20">Completed</Badge>}
-                      {file.status === "Processing" && <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border-blue-500/20 flex gap-1"><span className="animate-pulse">●</span> Processing</Badge>}
-                      {file.status === "Failed" && <Badge variant="secondary" className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20">Failed</Badge>}
-                      <span className="text-xs text-muted-foreground w-20 text-right">{file.date}</span>
+                    <div className="flex items-center gap-4">
+                      <div className="hidden sm:flex items-center gap-2">
+                        <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20">
+                          Uploaded
+                        </Badge>
+                        <span className="text-xs text-muted-foreground w-20 text-right">
+                          {file.createdAt?.seconds ? formatDistanceToNow(new Date(file.createdAt.seconds * 1000), { addSuffix: true }) : "Just now"}
+                        </span>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem>Download Excel</DropdownMenuItem>
+                          <DropdownMenuItem>View Details</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem>Download Excel</DropdownMenuItem>
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -172,56 +192,24 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              <div className="relative pl-6 border-l border-border/50 pb-6 last:pb-0">
-                <span className="absolute -left-1.5 top-1 h-3 w-3 rounded-full bg-primary ring-4 ring-background"></span>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium">OCR Scanning</p>
-                    <p className="text-xs text-muted-foreground">Bank_Statement_Oct_2023.pdf</p>
-                  </div>
-                  <span className="text-xs font-medium text-primary">85%</span>
-                </div>
-                <div className="h-1.5 w-full bg-secondary rounded-full mt-3">
-                  <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '85%' }}></div>
-                </div>
+              <div className="text-sm text-muted-foreground text-center py-4">
+                Processing status will appear here once extraction is enabled.
               </div>
 
-              <div className="relative pl-6 border-l border-border/50 pb-6 last:pb-0">
-                <span className="absolute -left-1.5 top-1 h-3 w-3 rounded-full bg-muted-foreground/30 ring-4 ring-background"></span>
-                <div className="flex items-start justify-between">
+              <div className="mt-8 p-4 rounded-lg bg-primary/5 border border-primary/10">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Queued</p>
-                    <p className="text-xs text-muted-foreground">Invoice_Batch_002.pdf</p>
+                    <h4 className="text-sm font-medium text-primary">Tip: Use Templates</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Save time by creating templates for recurring document layouts.
+                    </p>
+                    <Link href="/dashboard/templates/builder">
+                      <Button variant="link" className="text-primary p-0 h-auto text-xs mt-2">
+                        Create Template &rarr;
+                      </Button>
+                    </Link>
                   </div>
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                </div>
-              </div>
-
-              <div className="relative pl-6 border-l border-border/50">
-                <span className="absolute -left-1.5 top-1 h-3 w-3 rounded-full bg-muted-foreground/30 ring-4 ring-background"></span>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Queued</p>
-                    <p className="text-xs text-muted-foreground">Q3_Financials.xlsx</p>
-                  </div>
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 p-4 rounded-lg bg-primary/5 border border-primary/10">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-medium text-primary">Tip: Use Templates</h4>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Save time by creating templates for recurring document layouts.
-                  </p>
-                  <Link href="/dashboard/templates/builder">
-                    <Button variant="link" className="text-primary p-0 h-auto text-xs mt-2">
-                      Create Template &rarr;
-                    </Button>
-                  </Link>
                 </div>
               </div>
             </div>

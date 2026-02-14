@@ -34,6 +34,7 @@ import {
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { useFirestore } from "@/hooks/useFirestore";
 
 export default function DashboardLayout({
   children,
@@ -41,6 +42,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const { stats, user } = useFirestore();
 
   const handleSignOut = async () => {
     try {
@@ -60,7 +62,7 @@ export default function DashboardLayout({
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
               <FileText className="h-5 w-5" />
             </div>
-            <span>DocExtract AI</span>
+            <span>FinFlow AI</span>
           </Link>
         </div>
         
@@ -84,16 +86,23 @@ export default function DashboardLayout({
         </div>
 
         <div className="p-4 border-t border-border/50">
-          <div className="bg-primary/10 rounded-lg p-4 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-primary">Pro Plan</span>
-              <span className="text-xs text-muted-foreground">850/1000</span>
+          {stats && (
+            <div className="bg-primary/10 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-primary">{stats.subscriptionTier} Plan</span>
+                <span className="text-xs text-muted-foreground">{stats.creditsRemaining} left</span>
+              </div>
+              <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, (stats.creditsRemaining / 1000) * 100)}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {stats.creditsRemaining <= 0 ? "Top-up Required" : "Renews in 30 days"}
+              </p>
             </div>
-            <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
-              <div className="h-full bg-primary w-[85%] rounded-full"></div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">150 credits remaining</p>
-          </div>
+          )}
           
           <Button 
             variant="ghost" 
@@ -125,7 +134,7 @@ export default function DashboardLayout({
                       <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
                         <FileText className="h-5 w-5" />
                       </div>
-                      <span>DocExtract AI</span>
+                      <span>FinFlow AI</span>
                     </div>
                   </div>
                   <nav className="flex-1 py-6 px-3 space-y-1">
@@ -209,8 +218,8 @@ export default function DashboardLayout({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">John Doe</p>
-                    <p className="text-xs leading-none text-muted-foreground">john@example.com</p>
+                    <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

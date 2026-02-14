@@ -32,8 +32,15 @@ export default function SignupPage() {
       // Note: We don't need to send verification email for Google auth as it's already verified
       router.push("/dashboard");
     } catch (err: any) {
-      console.error("Google signup error:", err);
-      setError("Failed to sign up with Google");
+      // Common in preview/Tempo environments when the current domain isn't in Firebase Auth "Authorized domains"
+      if (err?.code === "auth/unauthorized-domain") {
+        setError(
+          "Google sign-up isn’t enabled for this preview URL yet. Please use email/password, or add this domain to Firebase Auth → Settings → Authorized domains."
+        );
+      } else {
+        console.error("Google signup error:", err);
+        setError("Failed to sign up with Google");
+      }
     } finally {
       setLoading(false);
     }

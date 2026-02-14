@@ -15,7 +15,7 @@ export default function LandingPage() {
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
               <FileText className="h-5 w-5" />
             </div>
-            <span>DocExtract AI</span>
+            <span>FinFlow AI</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
             <Link href="#features" className="hover:text-foreground transition-colors">Features</Link>
@@ -47,7 +47,7 @@ export default function LandingPage() {
               <span className="text-primary">Structured Excel Data</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl leading-relaxed">
-              Stop manual data entry. Upload invoices, bank statements, and reports. 
+              Stop manual data entry. Upload GST Invoices. 
               Get clean, segregated Excel sheets instantly. Zero post-processing required.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
@@ -170,7 +170,7 @@ export default function LandingPage() {
 
       <footer className="py-10 border-t border-border/40 text-center text-sm text-muted-foreground">
         <div className="container">
-          <p>&copy; 2024 DocExtract AI. All rights reserved.</p>
+          <p>&copy; 2024 FinFlow AI. All rights reserved.</p>
         </div>
       </footer>
     </div>

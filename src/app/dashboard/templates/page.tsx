@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +13,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useFirestore } from "@/hooks/useFirestore";
+import { formatDistanceToNow } from "date-fns";
 
 export default function TemplatesPage() {
-  const templates = [
-    { id: 1, name: "Standard Invoice", type: "Invoice", fields: 12, lastUsed: "2 days ago", color: "bg-blue-500" },
-    { id: 2, name: "Chase Bank Statement", type: "Bank Statement", fields: 8, lastUsed: "5 hours ago", color: "bg-emerald-500" },
-    { id: 3, name: "Uber Receipts", type: "Receipt", fields: 5, lastUsed: "1 week ago", color: "bg-orange-500" },
-    { id: 4, name: "Vendor Contact List", type: "Contact List", fields: 15, lastUsed: "1 month ago", color: "bg-purple-500" },
-    { id: 5, name: "AWS Billing Report", type: "Invoice", fields: 24, lastUsed: "3 days ago", color: "bg-blue-500" },
-  ];
+  const { templates, loading } = useFirestore();
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading templates...</div>;
+  }
 
   return (
     <div className="space-y-8">
@@ -54,12 +56,12 @@ export default function TemplatesPage() {
           <Card key={template.id} className="flex flex-col hover:shadow-md transition-shadow">
             <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
               <div className="flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-lg ${template.color}/10 flex items-center justify-center`}>
-                  <FileSpreadsheet className={`h-5 w-5 ${template.color.replace('bg-', 'text-')}`} />
+                <div className={`h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center`}>
+                  <FileSpreadsheet className={`h-5 w-5 text-blue-500`} />
                 </div>
                 <div>
                   <CardTitle className="text-base">{template.name}</CardTitle>
-                  <CardDescription>{template.type}</CardDescription>
+                  <CardDescription>{template.extractionFields?.length || 0} fields mapped</CardDescription>
                 </div>
               </div>
               <DropdownMenu>
@@ -81,18 +83,27 @@ export default function TemplatesPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs uppercase tracking-wider">Fields</p>
-                  <p className="font-medium">{template.fields} extracted</p>
+                  <p className="font-medium">{template.extractionFields?.length || 0} extracted</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase tracking-wider">Last Used</p>
-                  <p className="font-medium">{template.lastUsed}</p>
+                  <p className="text-muted-foreground text-xs uppercase tracking-wider">Created</p>
+                  <p className="font-medium">
+                    {template.createdAt?.seconds 
+                      ? formatDistanceToNow(new Date(template.createdAt.seconds * 1000), { addSuffix: true }) 
+                      : "Just now"}
+                  </p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Badge variant="secondary" className="font-normal text-xs">Date</Badge>
-                <Badge variant="secondary" className="font-normal text-xs">Invoice #</Badge>
-                <Badge variant="secondary" className="font-normal text-xs">Total</Badge>
-                {template.fields > 3 && <Badge variant="outline" className="font-normal text-xs">+{template.fields - 3} more</Badge>}
+                {template.extractionFields?.slice(0, 3).map((field, i) => (
+                   <Badge key={i} variant="secondary" className="font-normal text-xs">{field}</Badge>
+                ))}
+                {(template.extractionFields?.length || 0) > 3 && (
+                  <Badge variant="outline" className="font-normal text-xs">
+                    +{template.extractionFields.length - 3} more
+                  </Badge>
+                )}
+                {template.isDraft && <Badge variant="outline" className="border-yellow-500 text-yellow-500 text-xs">Draft</Badge>}
               </div>
             </CardContent>
             <CardFooter className="pt-4 border-t border-border/50">

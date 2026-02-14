@@ -12,7 +12,7 @@ export default function PricingPage() {
              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
                <span className="font-bold">D</span>
              </div>
-             <span>DocExtract AI</span>
+             <span>FinFlow AI</span>
           </Link>
           <div className="flex items-center gap-4">
             <Link href="/login" className="text-sm font-medium hover:text-primary transition-colors">

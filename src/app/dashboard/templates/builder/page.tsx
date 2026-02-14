@@ -2,19 +2,58 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ChevronLeft, Save, Plus, Wand2, ArrowRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { useFirestore } from "@/hooks/useFirestore";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function TemplateBuilderPage() {
+  const router = useRouter();
+  const { saveTemplate, user, stats } = useFirestore();
+  const { toast } = useToast();
+  const [templateName, setTemplateName] = useState("New Template");
+  const [documentType, setDocumentType] = useState("Invoice");
   const [fields, setFields] = useState([
     { name: "Invoice Number", type: "Text", required: true },
     { name: "Date", type: "Date", required: true },
     { name: "Total Amount", type: "Currency", required: true },
   ]);
+
+  const handleSave = async (isDraft: boolean) => {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+
+    if (!isDraft && (!stats || stats.creditsRemaining <= 0)) {
+       toast({ title: "Insufficient Credits", description: "Cannot save active templates with 0 credits.", variant: "destructive" });
+       return;
+    }
+
+    try {
+      await saveTemplate({
+        name: templateName,
+        documentType,
+        extractionFields: fields.map(f => f.name),
+      }, isDraft);
+
+      toast({
+        title: isDraft ? "Draft Saved" : "Template Saved",
+        description: `Successfully saved ${templateName}`,
+      });
+
+      if (!isDraft) {
+        router.push("/dashboard/templates");
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save template", variant: "destructive" });
+    }
+  };
 
   const addField = () => {
     setFields([...fields, { name: "New Field", type: "Text", required: false }]);
@@ -30,13 +69,16 @@ export default function TemplateBuilderPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">New Extraction Template</h1>
+            <h1 className="text-2xl font-bold tracking-tight">New Invoice Template</h1>
             <p className="text-muted-foreground text-sm">Define rules for document extraction.</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">Save Draft</Button>
-          <Button>
+          <Button variant="outline" onClick={() => handleSave(true)}>Save Draft</Button>
+          <Button 
+            onClick={() => handleSave(false)}
+            disabled={!stats || stats.creditsRemaining <= 0}
+          >
             <Save className="mr-2 h-4 w-4" />
             Save Template
           </Button>
@@ -123,11 +165,11 @@ export default function TemplateBuilderPage() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Template Name</label>
-                      <Input placeholder="e.g. Standard Invoice" />
-                    </div>
-                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Document Type</label>
-                      <Input placeholder="Invoice, Receipt, etc." />
+                      <Input 
+                        placeholder="e.g. Standard Invoice" 
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                      />
                     </div>
                   </div>
                 </TabsContent>

@@ -29,8 +29,15 @@ export default function LoginPage() {
       await signInWithPopup(auth, provider);
       router.push("/dashboard");
     } catch (err: any) {
-      console.error("Google login error:", err);
-      setError("Failed to sign in with Google");
+      // Common in preview/Tempo environments when the current domain isn't in Firebase Auth "Authorized domains"
+      if (err?.code === "auth/unauthorized-domain") {
+        setError(
+          "Google sign-in isn’t enabled for this preview URL yet. Please use email/password, or add this domain to Firebase Auth → Settings → Authorized domains."
+        );
+      } else {
+        console.error("Google login error:", err);
+        setError("Failed to sign in with Google");
+      }
     } finally {
       setLoading(false);
     }
