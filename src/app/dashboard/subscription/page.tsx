@@ -1,9 +1,32 @@
+"use client";
+
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Zap } from "lucide-react";
+import { CheckCircle2, Zap, Loader2, Calendar } from "lucide-react";
+import { useFirestore } from "@/hooks/useFirestore";
+import { Progress } from "@/components/ui/progress";
+import { format } from "date-fns";
+import { PRICING_PLANS } from "@/app/pricing/constants";
 
 export default function SubscriptionPage() {
+  const { stats, usage, subscriptions, loading, user } = useFirestore();
+
+  if (loading) {
+    return <div className="p-8 text-center flex items-center justify-center gap-2">
+      <Loader2 className="h-4 w-4 animate-spin" /> Loading subscription details...
+    </div>;
+  }
+
+  // Find current plan details from constants
+  const currentPlanId = stats?.subscriptionTier.toLowerCase() || "free";
+  const planDetails = PRICING_PLANS.find(p => p.id === currentPlanId) || PRICING_PLANS[0];
+
+  // Calculate usage percentage
+  const usagePercentage = stats ? Math.min(100, ((1000 - stats.creditsRemaining) / 1000) * 100) : 0;
+  const creditsUsed = stats ? 1000 - stats.creditsRemaining : 0;
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
@@ -20,42 +43,59 @@ export default function SubscriptionPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Current Plan</CardTitle>
-              <Badge className="bg-primary text-primary-foreground hover:bg-primary/90">Pro</Badge>
+              <Badge className="bg-primary text-primary-foreground hover:bg-primary/90">
+                {stats?.subscriptionTier || "Free"}
+              </Badge>
             </div>
-            <CardDescription>You are currently on the Pro Tier</CardDescription>
+            <CardDescription>
+              {planDetails.description}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span>Monthly Credits</span>
-                <span className="font-bold">850 / 1000</span>
+                <span>Monthly Uploads</span>
+                <span className="font-bold">{usage?.monthlyUploadCount || 0} / 10</span>
               </div>
-              <div className="h-2 w-full bg-background rounded-full overflow-hidden">
-                <div className="h-full bg-primary w-[85%] rounded-full"></div>
+              <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${(usage?.monthlyUploadCount || 0) >= 10
+                      ? "bg-destructive"
+                      : (usage?.monthlyUploadCount || 0) >= 8
+                        ? "bg-yellow-500"
+                        : "bg-primary"
+                    }`}
+                  style={{ width: `${Math.min(100, ((usage?.monthlyUploadCount || 0) / 10) * 100)}%` }}
+                ></div>
               </div>
-              <p className="text-xs text-muted-foreground">Credits renew on Nov 12, 2023</p>
+              <div className="flex justify-between items-center text-xs text-muted-foreground">
+                <span>{(usage?.monthlyUploadCount || 0) >= 10 ? "Limit Reached" : "Refreshes monthly"}</span>
+                {stats?.subscriptionTier === "Business" && (
+                  <span className="text-emerald-500 font-medium flex items-center gap-1">
+                    <Zap className="h-3 w-3" /> 10% Rollover Active
+                  </span>
+                )}
+              </div>
             </div>
             <div className="pt-4 space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                <span>1000 Document Credits/mo</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                <span>Advanced AI Extraction</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                <span>Priority Support</span>
-              </div>
+              {planDetails.features.slice(0, 4).map((feature, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <span>{feature}</span>
+                </div>
+              ))}
             </div>
           </CardContent>
           <CardFooter>
-            <Button variant="outline" className="w-full bg-background">Manage Subscription</Button>
+            <Link href="/pricing" className="w-full">
+              <Button variant="outline" className="w-full bg-background">
+                {stats?.subscriptionTier === "Free" ? "Upgrade Plan" : "Change Plan"}
+              </Button>
+            </Link>
           </CardFooter>
         </Card>
 
-        {/* Upgrade Options */}
+        {/* Upgrade Options / Enterprise */}
         <Card>
           <CardHeader>
             <CardTitle>Upgrade to Enterprise</CardTitle>
@@ -82,7 +122,9 @@ export default function SubscriptionPage() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button className="w-full">Contact Sales</Button>
+            <Link href="/pricing#enterprise" className="w-full">
+              <Button className="w-full">Contact Sales</Button>
+            </Link>
           </CardFooter>
         </Card>
       </div>
@@ -94,34 +136,39 @@ export default function SubscriptionPage() {
           <CardDescription>Past billing cycles and credit consumption</CardDescription>
         </CardHeader>
         <CardContent>
-           <div className="rounded-md border border-border">
-            <div className="grid grid-cols-4 p-4 font-medium text-sm bg-muted/50">
-              <div>Period</div>
-              <div>Plan</div>
-              <div>Credits Used</div>
-              <div className="text-right">Amount</div>
+          {subscriptions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No subscription history found.</p>
             </div>
-            <div className="divide-y divide-border">
-              <div className="grid grid-cols-4 p-4 text-sm">
-                <div>Oct 1 - Oct 31</div>
-                <div>Pro Tier</div>
-                <div>945 / 1000</div>
-                <div className="text-right">$49.00</div>
+          ) : (
+            <div className="rounded-md border border-border overflow-hidden">
+              <div className="grid grid-cols-4 p-4 font-medium text-sm bg-muted/50">
+                <div>Date</div>
+                <div>Plan</div>
+                <div>Status</div>
+                <div className="text-right">Amount</div>
               </div>
-              <div className="grid grid-cols-4 p-4 text-sm">
-                <div>Sep 1 - Sep 30</div>
-                <div>Pro Tier</div>
-                <div>820 / 1000</div>
-                <div className="text-right">$49.00</div>
-              </div>
-              <div className="grid grid-cols-4 p-4 text-sm">
-                <div>Aug 1 - Aug 31</div>
-                <div>Starter</div>
-                <div>250 / 250</div>
-                <div className="text-right">$19.00</div>
+              <div className="divide-y divide-border">
+                {subscriptions.map((sub) => (
+                  <div key={sub.id} className="grid grid-cols-4 p-4 text-sm">
+                    <div>
+                      {sub.createdAt?.seconds
+                        ? format(new Date(sub.createdAt.seconds * 1000), "MMM d, yyyy")
+                        : "Unknown"}
+                    </div>
+                    <div>{sub.planName}</div>
+                    <div>
+                      <Badge variant="outline" className="capitalize">
+                        {sub.status}
+                      </Badge>
+                    </div>
+                    <div className="text-right">${sub.price}</div>
+                  </div>
+                ))}
               </div>
             </div>
-           </div>
+          )}
         </CardContent>
       </Card>
     </div>

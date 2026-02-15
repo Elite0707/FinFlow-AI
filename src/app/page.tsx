@@ -20,7 +20,7 @@ export default function LandingPage() {
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
             <Link href="#features" className="hover:text-foreground transition-colors">Features</Link>
             <Link href="#how-it-works" className="hover:text-foreground transition-colors">How it Works</Link>
-            <Link href="#pricing" className="hover:text-foreground transition-colors">Pricing</Link>
+            <Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link>
           </nav>
           <div className="flex items-center gap-4">
             <Link href="/login">
@@ -143,7 +143,7 @@ export default function LandingPage() {
         </section>
 
         {/* Testimonial Section */}
-        <section className="py-20">
+        <section id="how-it-works" className="py-20">
           <div className="container max-w-4xl">
             <Card className="bg-gradient-to-br from-card to-card/50 border-primary/20 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10">

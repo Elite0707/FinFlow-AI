@@ -42,7 +42,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { stats, user } = useFirestore();
+  const { stats, usage, user } = useFirestore();
 
   const handleSignOut = async () => {
     try {
@@ -65,7 +65,7 @@ export default function DashboardLayout({
             <span>FinFlow AI</span>
           </Link>
         </div>
-        
+
         <div className="flex-1 overflow-auto py-6 px-3">
           <nav className="space-y-1">
             <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" active />
@@ -73,7 +73,7 @@ export default function DashboardLayout({
             <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" />
             <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" />
           </nav>
-          
+
           <div className="mt-8">
             <h3 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Settings
@@ -86,26 +86,36 @@ export default function DashboardLayout({
         </div>
 
         <div className="p-4 border-t border-border/50">
-          {stats && (
+          {usage && (
             <div className="bg-primary/10 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-primary">{stats.subscriptionTier} Plan</span>
-                <span className="text-xs text-muted-foreground">{stats.creditsRemaining} left</span>
+                <span className="text-xs font-medium text-primary">Monthly Usage</span>
+                <span className={`text-xs ${usage.monthlyUploadCount >= 10
+                  ? "text-destructive font-bold"
+                  : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
+                  }`}>
+                  {usage.monthlyUploadCount} / 10
+                </span>
               </div>
-              <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-primary rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, (stats.creditsRemaining / 1000) * 100)}%` }}
+              <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${usage.monthlyUploadCount >= 10
+                    ? "bg-destructive w-full"
+                    : usage.monthlyUploadCount >= 8
+                      ? "bg-yellow-500"
+                      : "bg-emerald-500"
+                    }`}
+                  style={{ width: `${Math.min(100, (usage.monthlyUploadCount / 10) * 100)}%` }}
                 ></div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {stats.creditsRemaining <= 0 ? "Top-up Required" : "Renews in 30 days"}
+                {usage.monthlyUploadCount >= 10 ? "Limit Reached" : "Resets in 30 days"}
               </p>
             </div>
           )}
-          
-          <Button 
-            variant="ghost" 
+
+          <Button
+            variant="ghost"
             className="w-full justify-start text-muted-foreground hover:text-foreground"
             onClick={handleSignOut}
           >
@@ -153,9 +163,9 @@ export default function DashboardLayout({
           <div className="flex-1 max-w-xl mx-4 hidden md:block">
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                type="search" 
-                placeholder="Search documents, templates..." 
+              <Input
+                type="search"
+                placeholder="Search documents, templates..."
                 className="pl-9 bg-secondary/50 border-transparent focus:bg-background focus:border-input transition-all"
               />
             </div>
@@ -175,30 +185,30 @@ export default function DashboardLayout({
                   <span className="text-xs text-muted-foreground">2 new</span>
                 </div>
                 <div className="max-h-[300px] overflow-y-auto">
-                   <div className="p-4 border-b border-border hover:bg-muted/50 transition-colors cursor-pointer">
-                     <div className="flex gap-3">
-                       <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-                         <FileText className="h-4 w-4 text-emerald-500" />
-                       </div>
-                       <div>
-                         <p className="text-sm font-medium">Batch processing complete</p>
-                         <p className="text-xs text-muted-foreground mt-1">"Invoice_Batch_001.pdf" has been processed successfully.</p>
-                         <p className="text-[10px] text-muted-foreground mt-2">2 mins ago</p>
-                       </div>
-                     </div>
-                   </div>
-                   <div className="p-4 hover:bg-muted/50 transition-colors cursor-pointer">
-                     <div className="flex gap-3">
-                       <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                         <CreditCard className="h-4 w-4 text-blue-500" />
-                       </div>
-                       <div>
-                         <p className="text-sm font-medium">Subscription renewed</p>
-                         <p className="text-xs text-muted-foreground mt-1">Your Pro plan has been renewed for November.</p>
-                         <p className="text-[10px] text-muted-foreground mt-2">1 day ago</p>
-                       </div>
-                     </div>
-                   </div>
+                  <div className="p-4 border-b border-border hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex gap-3">
+                      <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <FileText className="h-4 w-4 text-emerald-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Batch processing complete</p>
+                        <p className="text-xs text-muted-foreground mt-1">"Invoice_Batch_001.pdf" has been processed successfully.</p>
+                        <p className="text-[10px] text-muted-foreground mt-2">2 mins ago</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-4 hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                        <CreditCard className="h-4 w-4 text-blue-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Subscription renewed</p>
+                        <p className="text-xs text-muted-foreground mt-1">Your Pro plan has been renewed for November.</p>
+                        <p className="text-[10px] text-muted-foreground mt-2">1 day ago</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="p-2 border-t border-border">
                   <Button variant="ghost" size="sm" className="w-full text-xs">View all notifications</Button>
@@ -242,7 +252,7 @@ export default function DashboardLayout({
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="text-destructive cursor-pointer"
                   onClick={handleSignOut}
                 >
@@ -267,8 +277,8 @@ export default function DashboardLayout({
 function NavItem({ href, icon, label, active = false }: { href: string; icon: React.ReactNode; label: string; active?: boolean }) {
   return (
     <Link href={href}>
-      <Button 
-        variant={active ? "secondary" : "ghost"} 
+      <Button
+        variant={active ? "secondary" : "ghost"}
         className={`w-full justify-start ${active ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
       >
         <span className={`mr-3 ${active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>

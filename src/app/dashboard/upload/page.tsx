@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, FileText, X, File, AlertCircle, CheckCircle2, Download, Trash2, ExternalLink, Loader2, Crown, AlertTriangle } from "lucide-react";
@@ -27,14 +28,16 @@ import {
 } from "@/components/ui/table";
 import { formatDistanceToNow } from "date-fns";
 import { format } from "date-fns";
+import { countPdfPages } from "@/utils/pdfHelpers"; // Import Helper
 
 interface UploadingFile {
   id: string; // unique id for key
   fileObject: File;
   name: string;
   progress: number;
-  status: "uploading" | "completed" | "error";
+  status: "uploading" | "completed" | "error" | "canceled";
   error?: string;
+  cancel?: () => void;
 }
 
 export default function UploadPage() {
@@ -42,7 +45,9 @@ export default function UploadPage() {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
-  
+
+  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB Limit
+
   // userFiles comes from our updated hook
   const { uploadFile, userFiles, deleteUserFile, loading, usage } = useFirestore();
   const { toast } = useToast();
@@ -67,12 +72,67 @@ export default function UploadPage() {
       return;
     }
 
-    // Filter out files that are already being uploaded
-    const newFiles = files.filter(f => !uploadingFiles.some(uf => uf.name === f.name && uf.status === "uploading"));
-    
-    if (newFiles.length === 0) return;
+    // Filter large files
+    const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversizedFiles.length > 0) {
+      oversizedFiles.forEach(f => {
+        toast({
+          title: "File Too Large",
+          description: `${f.name} exceeds the 2MB limit for the Free Plan.`,
+          variant: "destructive"
+        });
+      });
+    }
 
-    const newUploads = newFiles.map(file => ({
+    const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
+
+    // Filter out files that are already being uploaded
+    const potentiallyValidFiles = validFiles.filter(f => !uploadingFiles.some(uf => uf.name === f.name && uf.status === "uploading"));
+
+    if (potentiallyValidFiles.length === 0) return;
+
+    // Check PDF Page Counts
+    const MAX_PAGES_FREE = 3;
+    const finalFiles: File[] = [];
+
+    for (const file of potentiallyValidFiles) {
+      if (file.type === 'application/pdf') {
+        try {
+          const pageCount = await countPdfPages(file);
+          if (pageCount > MAX_PAGES_FREE) {
+            toast({
+              title: "Page Limit Exceeded",
+              description: `${file.name} has ${pageCount} pages. Free plan is limited to ${MAX_PAGES_FREE} pages per PDF.`,
+              variant: "destructive"
+            });
+            continue; // Skip this file
+          }
+        } catch (error) {
+          toast({
+            title: "PDF Error",
+            description: `Could not read ${file.name}. It might be password protected.`,
+            variant: "destructive"
+          });
+          continue;
+        }
+      }
+      finalFiles.push(file);
+    }
+
+    if (finalFiles.length === 0) return;
+
+    // Check count limit
+    if (monthlyUploadCount + finalFiles.length > 10) {
+      setIsUpgradeModalOpen(true);
+      toast({
+        title: "Upload Limit Exceeded",
+        description: "Uploading these files would exceed your monthly limit.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const newUploads = finalFiles.map(file => ({
       id: Math.random().toString(36).substring(7),
       fileObject: file,
       name: file.name,
@@ -85,17 +145,28 @@ export default function UploadPage() {
     // Process each file
     newUploads.forEach(async (uploadItem) => {
       try {
-        await uploadFile(uploadItem.fileObject, (progress) => {
-          setUploadingFiles(prev => 
-            prev.map(item => 
+        const upload = uploadFile(uploadItem.fileObject, (progress) => {
+          setUploadingFiles(prev =>
+            prev.map(item =>
               item.id === uploadItem.id ? { ...item, progress } : item
             )
           );
         });
 
+        if (!upload) return;
+
+        // Store cancel function
+        setUploadingFiles(prev =>
+          prev.map(item =>
+            item.id === uploadItem.id ? { ...item, cancel: upload.cancel } : item
+          )
+        );
+
+        await upload.promise;
+
         // Success
-        setUploadingFiles(prev => 
-          prev.map(item => 
+        setUploadingFiles(prev =>
+          prev.map(item =>
             item.id === uploadItem.id ? { ...item, status: "completed", progress: 100 } : item
           )
         );
@@ -110,10 +181,19 @@ export default function UploadPage() {
           setUploadingFiles(prev => prev.filter(item => item.id !== uploadItem.id));
         }, 2000);
 
-      } catch (error) {
+      } catch (error: any) {
+        if (error.code === 'storage/canceled') {
+          setUploadingFiles(prev => prev.filter(item => item.id !== uploadItem.id));
+          toast({
+            title: "Upload Canceled",
+            description: `${uploadItem.name} upload was canceled.`,
+          });
+          return;
+        }
+
         console.error(error);
-        setUploadingFiles(prev => 
-          prev.map(item => 
+        setUploadingFiles(prev =>
+          prev.map(item =>
             item.id === uploadItem.id ? { ...item, status: "error", error: "Upload failed" } : item
           )
         );
@@ -129,7 +209,7 @@ export default function UploadPage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     if (isLimitReached) {
       setIsUpgradeModalOpen(true);
       return;
@@ -190,9 +270,11 @@ export default function UploadPage() {
               <AlertTitle>Monthly Limit Reached</AlertTitle>
               <AlertDescription className="flex items-center justify-between mt-2">
                 <span>You have reached the 10-file monthly upload limit. Upgrade to Pro for unlimited uploads.</span>
-                <Button size="sm" onClick={() => setIsUpgradeModalOpen(true)} className="ml-4">
-                  Upgrade Now
-                </Button>
+                <Link href="/pricing?source=limit">
+                  <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    Upgrade Now
+                  </Button>
+                </Link>
               </AlertDescription>
             </Alert>
           )}
@@ -205,14 +287,13 @@ export default function UploadPage() {
           </div>
           <Progress value={(monthlyUploadCount / 10) * 100} className="h-2 mb-6" />
 
-          <div 
-            className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
-              isLimitReached 
-                ? "border-muted bg-muted/20 opacity-60 cursor-not-allowed" 
-                : isDragging 
-                  ? "border-primary bg-primary/5 scale-[1.01]" 
-                  : "border-border hover:border-primary/50 hover:bg-muted/30"
-            }`}
+          <div
+            className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${isLimitReached
+              ? "border-muted bg-muted/20 opacity-60 cursor-not-allowed"
+              : isDragging
+                ? "border-primary bg-primary/5 scale-[1.01]"
+                : "border-border hover:border-primary/50 hover:bg-muted/30"
+              }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -235,7 +316,7 @@ export default function UploadPage() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Supports PDF, JPG, PNG, XLSX (max 25MB)
+                Supports PDF, JPG, PNG, XLSX (max 2MB)
               </p>
             </div>
           </div>
@@ -255,8 +336,21 @@ export default function UploadPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-sm font-medium truncate">{file.name}</p>
-                        {file.status === "error" && <span className="text-destructive text-xs">Failed</span>}
-                        {file.status === "completed" && <span className="text-emerald-500 text-xs flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Uploaded</span>}
+                        <div className="flex items-center gap-2">
+                          {file.status === "uploading" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => file.cancel?.()}
+                              title="Cancel Upload"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {file.status === "error" && <span className="text-destructive text-xs">Failed</span>}
+                          {file.status === "completed" && <span className="text-emerald-500 text-xs flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Uploaded</span>}
+                        </div>
                       </div>
                       <Progress value={file.progress} className="h-1" />
                     </div>
@@ -344,7 +438,7 @@ export default function UploadPage() {
                           <TableCell className="text-muted-foreground text-xs uppercase">{file.type?.split('/').pop() || "FILE"}</TableCell>
                           <TableCell>{(file.size / 1024 / 1024).toFixed(2)} MB</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {file.createdAt?.seconds 
+                            {file.createdAt?.seconds
                               ? format(new Date(file.createdAt.seconds * 1000), "MMM d, yyyy")
                               : "Just now"}
                           </TableCell>
@@ -355,9 +449,9 @@ export default function UploadPage() {
                                   <Download className="h-4 w-4" />
                                 </a>
                               </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                 onClick={() => handleDelete(file.id, file.storagePath)}
                                 title="Delete"
@@ -408,15 +502,13 @@ export default function UploadPage() {
             </div>
           </div>
           <DialogFooter className="flex-col sm:justify-between gap-2">
-            <Button 
-              className="w-full text-lg py-6" 
-              onClick={() => {
-                console.log("Upgrade Clicked");
-                setIsUpgradeModalOpen(false);
-              }}
-            >
-              Upgrade Now ($19/mo)
-            </Button>
+            <Link href="/pricing?source=limit" className="w-full">
+              <Button
+                className="w-full text-lg py-6"
+              >
+                Upgrade Now ($19/mo)
+              </Button>
+            </Link>
             <Button variant="ghost" onClick={() => setIsUpgradeModalOpen(false)}>
               Maybe Later
             </Button>

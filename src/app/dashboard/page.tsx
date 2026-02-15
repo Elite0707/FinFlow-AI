@@ -4,13 +4,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  FileText, 
-  Upload, 
-  Plus, 
-  ArrowUpRight, 
-  MoreHorizontal, 
-  CheckCircle2, 
+import {
+  FileText,
+  Upload,
+  Plus,
+  ArrowUpRight,
+  MoreHorizontal,
+  CheckCircle2,
   Clock,
   AlertCircle
 } from "lucide-react";
@@ -26,7 +26,7 @@ import { useFirestore } from "@/hooks/useFirestore";
 import { formatDistanceToNow } from "date-fns";
 
 export default function DashboardPage() {
-  const { stats, userFiles, loading } = useFirestore();
+  const { stats, usage, userFiles, loading } = useFirestore();
   const recentUploads = userFiles ?? [];
 
   if (loading) {
@@ -72,17 +72,22 @@ export default function DashboardPage() {
         </Card>
         <Card className="hover:border-primary/50 transition-colors">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Credits Remaining</CardTitle>
+            <CardTitle className="text-sm font-medium">Monthly Usage</CardTitle>
             <div className="h-4 w-4 text-muted-foreground">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.creditsRemaining || 0}</div>
+            <div className="text-2xl font-bold">{usage?.monthlyUploadCount || 0} <span className="text-sm font-normal text-muted-foreground">/ 10</span></div>
             <div className="w-full bg-secondary h-1.5 rounded-full mt-2">
-              <div 
-                className="bg-primary h-full rounded-full transition-all" 
-                style={{ width: `${Math.min(100, ((stats?.creditsRemaining || 0) / 1000) * 100)}%` }}
+              <div
+                className={`h-full rounded-full transition-all ${(usage?.monthlyUploadCount || 0) >= 10
+                  ? "bg-destructive"
+                  : (usage?.monthlyUploadCount || 0) >= 8
+                    ? "bg-yellow-500"
+                    : "bg-primary"
+                  }`}
+                style={{ width: `${Math.min(100, ((usage?.monthlyUploadCount || 0) / 10) * 100)}%` }}
               ></div>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
@@ -94,7 +99,7 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Templates</CardTitle>
             <div className="h-4 w-4 text-muted-foreground">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>
             </div>
           </CardHeader>
           <CardContent>

@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
-import { 
-  doc, 
-  onSnapshot, 
-  collection, 
-  query, 
-  orderBy, 
-  limit, 
-  addDoc, 
-  serverTimestamp, 
-  updateDoc, 
+import {
+  doc,
+  onSnapshot,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  addDoc,
+  serverTimestamp,
+  updateDoc,
   increment,
   setDoc,
   deleteDoc,
@@ -48,12 +49,23 @@ export interface Template {
   createdAt: any;
 }
 
+export interface Subscription {
+  id: string;
+  planId: string;
+  planName: string;
+  price: number;
+  billingCycle: "monthly" | "yearly";
+  status: "active" | "canceled" | "expired";
+  createdAt: any;
+}
+
 export function useFirestore() {
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [usage, setUsage] = useState<UserUsage | null>(null);
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,7 +83,7 @@ export function useFirestore() {
       // Initialize stats if not exist
       const statsRef = doc(db, `users/${currentUser.uid}/stats/overview`);
       const usageRef = doc(db, `users/${currentUser.uid}/stats/usage`);
-      
+
       const handlePermissionDenied = (label: string, err: unknown) => {
         // Avoid crashing the app when Firestore rules block reads.
         // This gives the UI a safe empty state instead of throwing continuously.
@@ -79,8 +91,10 @@ export function useFirestore() {
           console.warn(`[Firestore] permission-denied while listening to ${label}.`);
           if (label === "stats") setStats(null);
           if (label === "usage") setUsage(null);
+          if (label === "usage") setUsage(null);
           if (label === "files") setUserFiles([]);
           if (label === "templates") setTemplates([]);
+          if (label === "subscriptions") setSubscriptions([]);
           setLoading(false);
           return;
         }
@@ -165,32 +179,52 @@ export function useFirestore() {
         (err) => handlePermissionDenied("templates", err)
       );
 
+      // Listen to subscriptions
+      const subscriptionsQuery = query(
+        collection(db, "subscriptions"),
+        where("userId", "==", currentUser.uid),
+        orderBy("createdAt", "desc")
+      );
+
+      const unsubscribeSubscriptions = onSnapshot(
+        subscriptionsQuery,
+        (snapshot) => {
+          const items = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Subscription[];
+          setSubscriptions(items);
+        },
+        (err) => handlePermissionDenied("subscriptions", err)
+      );
+
       return () => {
         unsubscribeStats();
         unsubscribeUsage();
         unsubscribeFiles();
         unsubscribeTemplates();
+        unsubscribeSubscriptions();
       };
     });
 
     return () => unsubscribeAuth();
   }, []);
 
-  const uploadFile = async (file: File, onProgress?: (progress: number) => void): Promise<void> => {
+  const uploadFile = (file: File, onProgress?: (progress: number) => void): { promise: Promise<void>, cancel: () => void } | undefined => {
     if (!user) return;
 
     // Check if file with same name exists in Firestore to avoid duplicates or handle overwrite
     // The prompt says: "If a file with the same name exists, append a timestamp to the filename in Storage"
     // We handle this by always ensuring unique storage path, but we might want to keep original name in Firestore.
-    
+
     const timestamp = Date.now();
     const uniqueFileName = `${timestamp}_${file.name}`;
     const storagePath = `user_uploads/${user.uid}/${uniqueFileName}`;
     const storageRef = ref(storage, storagePath);
-    
+
     const uploadTask = uploadBytesResumable(storageRef, file);
 
-    return new Promise((resolve, reject) => {
+    const promise = new Promise<void>((resolve, reject) => {
       uploadTask.on(
         "state_changed",
         (snapshot) => {
@@ -198,13 +232,20 @@ export function useFirestore() {
           if (onProgress) onProgress(progress);
         },
         (error) => {
-          console.error("Upload failed:", error);
-          reject(error);
+          if (error.code === 'storage/canceled') {
+            // Setup so UI can handle cancellation gracefully if needed, 
+            // though usually we just ignore or show 'canceled' state.
+            console.log("Upload canceled by user");
+            reject(error);
+          } else {
+            console.error("Upload failed:", error);
+            reject(error);
+          }
         },
         async () => {
           try {
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            
+
             // Add to Firestore
             const filesRef = collection(db, `users/${user.uid}/files`);
             await addDoc(filesRef, {
@@ -230,17 +271,29 @@ export function useFirestore() {
         }
       );
     });
+
+    return {
+      promise,
+      cancel: () => uploadTask.cancel()
+    };
   };
 
   const deleteUserFile = async (fileId: string, storagePath: string) => {
     if (!user) return;
 
     try {
-      // 1. Delete from Storage
-      const storageRef = ref(storage, storagePath);
-      await deleteObject(storageRef);
+      // 1. Delete from Storage (best effort)
+      try {
+        const storageRef = ref(storage, storagePath);
+        await deleteObject(storageRef);
+      } catch (storageError: any) {
+        // Ignore if object not found, otherwise log warning
+        if (storageError.code !== 'storage/object-not-found') {
+          console.warn("Storage delete error (non-fatal):", storageError);
+        }
+      }
 
-      // 2. Delete from Firestore
+      // 2. Delete from Firestore (source of truth for UI)
       const fileRef = doc(db, `users/${user.uid}/files/${fileId}`);
       await deleteDoc(fileRef);
     } catch (error) {
@@ -278,6 +331,7 @@ export function useFirestore() {
     usage,
     userFiles,
     templates,
+    subscriptions,
     loading,
     uploadFile,
     deleteUserFile,
