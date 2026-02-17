@@ -102,6 +102,12 @@ function PricingContent() {
                   <Link href="/dashboard" className="button-primary px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                     Dashboard
                   </Link>
+                  <button
+                    onClick={() => auth.signOut().then(() => router.push('/'))}
+                    className="text-sm font-medium hover:text-foreground transition-colors"
+                  >
+                    Sign Out
+                  </button>
                 </>
               )}
             </>

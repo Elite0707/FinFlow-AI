@@ -87,31 +87,33 @@ export default function DashboardLayout({
 
         <div className="p-4 border-t border-border/50">
           {usage && (
-            <div className="bg-primary/10 rounded-lg p-4 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-primary">Monthly Usage</span>
-                <span className={`text-xs ${usage.monthlyUploadCount >= 10
-                  ? "text-destructive font-bold"
-                  : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
-                  }`}>
-                  {usage.monthlyUploadCount} / 10
-                </span>
+            <Link href="/dashboard/subscription">
+              <div className="bg-primary/10 rounded-lg p-4 mb-4 hover:bg-primary/15 transition-colors cursor-pointer block">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-primary">Monthly Usage</span>
+                  <span className={`text-xs ${usage.monthlyUploadCount >= 10
+                    ? "text-destructive font-bold"
+                    : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
+                    }`}>
+                    {usage.monthlyUploadCount} / 10
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${usage.monthlyUploadCount >= 10
+                      ? "bg-destructive w-full"
+                      : usage.monthlyUploadCount >= 8
+                        ? "bg-yellow-500"
+                        : "bg-emerald-500"
+                      }`}
+                    style={{ width: `${Math.min(100, (usage.monthlyUploadCount / 10) * 100)}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {usage.monthlyUploadCount >= 10 ? "Limit Reached" : "Resets in 30 days"}
+                </p>
               </div>
-              <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${usage.monthlyUploadCount >= 10
-                    ? "bg-destructive w-full"
-                    : usage.monthlyUploadCount >= 8
-                      ? "bg-yellow-500"
-                      : "bg-emerald-500"
-                    }`}
-                  style={{ width: `${Math.min(100, (usage.monthlyUploadCount / 10) * 100)}%` }}
-                ></div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {usage.monthlyUploadCount >= 10 ? "Limit Reached" : "Resets in 30 days"}
-              </p>
-            </div>
+            </Link>
           )}
 
           <Button

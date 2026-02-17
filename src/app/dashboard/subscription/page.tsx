@@ -60,10 +60,10 @@ export default function SubscriptionPage() {
               <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${(usage?.monthlyUploadCount || 0) >= 10
-                      ? "bg-destructive"
-                      : (usage?.monthlyUploadCount || 0) >= 8
-                        ? "bg-yellow-500"
-                        : "bg-primary"
+                    ? "bg-destructive"
+                    : (usage?.monthlyUploadCount || 0) >= 8
+                      ? "bg-yellow-500"
+                      : "bg-primary"
                     }`}
                   style={{ width: `${Math.min(100, ((usage?.monthlyUploadCount || 0) / 10) * 100)}%` }}
                 ></div>
@@ -87,7 +87,7 @@ export default function SubscriptionPage() {
             </div>
           </CardContent>
           <CardFooter>
-            <Link href="/pricing" className="w-full">
+            <Link href="/pricing?source=subscription" className="w-full">
               <Button variant="outline" className="w-full bg-background">
                 {stats?.subscriptionTier === "Free" ? "Upgrade Plan" : "Change Plan"}
               </Button>
