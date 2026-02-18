@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,11 +14,58 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRouter } from "next/navigation";
 import { useFirestore } from "@/hooks/useFirestore";
+import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 
 export default function TemplatesPage() {
-  const { templates, loading } = useFirestore();
+  const { templates, loading, deleteTemplate, saveTemplate } = useFirestore();
+  const { toast } = useToast();
+  const router = useRouter();
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleEdit = (id: string) => {
+    router.push(`/dashboard/templates/builder?id=${id}`);
+  };
+
+  const handleDuplicate = async (template: any) => {
+    try {
+      await saveTemplate({
+        name: `Copy of ${template.name}`,
+        documentType: template.documentType,
+        extractionFields: template.extractionFields
+      }, true); // Save as draft initially
+      toast({ title: "Template Duplicated", description: "A copy has been created." });
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to duplicate template.", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setTemplateToDelete(id);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!templateToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteTemplate(templateToDelete);
+      toast({ title: "Template Deleted", description: "The template has been removed." });
+      setDeleteModalOpen(false);
+      setTemplateToDelete(null);
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to delete template.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (loading) {
     return <div className="p-8 text-center">Loading templates...</div>;
@@ -71,11 +119,11 @@ export default function TemplatesPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
-                  <DropdownMenuItem><Copy className="mr-2 h-4 w-4" /> Duplicate</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleEdit(template.id)}><Edit className="mr-2 h-4 w-4" /> Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleDuplicate(template)}><Copy className="mr-2 h-4 w-4" /> Duplicate</DropdownMenuItem>
                   <DropdownMenuItem><Share2 className="mr-2 h-4 w-4" /> Share</DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-destructive"><Trash className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteClick(template.id)}><Trash className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </CardHeader>
@@ -88,15 +136,15 @@ export default function TemplatesPage() {
                 <div>
                   <p className="text-muted-foreground text-xs uppercase tracking-wider">Created</p>
                   <p className="font-medium">
-                    {template.createdAt?.seconds 
-                      ? formatDistanceToNow(new Date(template.createdAt.seconds * 1000), { addSuffix: true }) 
+                    {template.createdAt?.seconds
+                      ? formatDistanceToNow(new Date(template.createdAt.seconds * 1000), { addSuffix: true })
                       : "Just now"}
                   </p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {template.extractionFields?.slice(0, 3).map((field, i) => (
-                   <Badge key={i} variant="secondary" className="font-normal text-xs">{field}</Badge>
+                  <Badge key={i} variant="secondary" className="font-normal text-xs">{field}</Badge>
                 ))}
                 {(template.extractionFields?.length || 0) > 3 && (
                   <Badge variant="outline" className="font-normal text-xs">
@@ -107,13 +155,22 @@ export default function TemplatesPage() {
               </div>
             </CardContent>
             <CardFooter className="pt-4 border-t border-border/50">
-              <Button variant="ghost" className="w-full text-primary hover:text-primary hover:bg-primary/10">
+              <Button variant="ghost" className="w-full text-primary hover:text-primary hover:bg-primary/10" onClick={() => handleEdit(template.id)}>
                 Use Template
               </Button>
             </CardFooter>
           </Card>
         ))}
       </div>
+
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        loading={isDeleting}
+        title="Delete Template?"
+        description="Are you sure you want to delete this template? This action cannot be undone."
+      />
     </div>
   );
 }

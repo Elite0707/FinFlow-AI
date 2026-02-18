@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ChevronLeft, Save, Plus, Wand2, ArrowRight } from "lucide-react";
+import { ChevronLeft, Save, Plus, Wand2, ArrowRight, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useToast } from "@/components/ui/use-toast";
+import PdfPreview from "@/components/PdfPreview";
 
-export default function TemplateBuilderPage() {
+function TemplateBuilderContent() {
   const router = useRouter();
-  const { saveTemplate, user, stats } = useFirestore();
+  const searchParams = useSearchParams();
+  const templateId = searchParams.get("id");
+  const { saveTemplate, updateTemplate, getTemplate, uploadFile, user, stats } = useFirestore();
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState("New Template");
   const [documentType, setDocumentType] = useState("Invoice");
@@ -24,6 +27,104 @@ export default function TemplateBuilderPage() {
     { name: "Total Amount", type: "Currency", required: true },
   ]);
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (templateId && user) {
+      const loadTemplate = async () => {
+        try {
+          const template = await getTemplate(templateId);
+          if (template) {
+            setTemplateName(template.name);
+            setDocumentType(template.documentType);
+            if (template.extractionFields) {
+              setFields(template.extractionFields.map(field => ({
+                name: field,
+                type: "Text",
+                required: false
+              })));
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load template", error);
+          toast({
+            title: "Error",
+            description: "Failed to load template details",
+            variant: "destructive"
+          });
+        }
+      };
+      loadTemplate();
+    }
+  }, [templateId, user, getTemplate, toast]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast({
+          title: "File Too Large",
+          description: "Please upload a file smaller than 5MB.",
+          variant: "destructive"
+        });
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
+  const clearFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const analyzeDocument = async () => {
+    if (!selectedFile) {
+      toast({ title: "No file selected", description: "Please upload a document first.", variant: "destructive" });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const res = await fetch("/api/templates/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Analysis failed");
+
+      if (data.fields) {
+        const newFields = Object.keys(data.fields).map(key => ({
+          name: key,
+          type: "Text",
+          required: false
+        }));
+        setFields(newFields);
+        toast({ title: "Analysis Complete", description: "Fields have been auto-detected." });
+      }
+
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Analysis Failed", description: "Could not analyze document.", variant: "destructive" });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleSave = async (isDraft: boolean) => {
     if (!user) {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
@@ -31,27 +132,50 @@ export default function TemplateBuilderPage() {
     }
 
     if (!isDraft && (!stats || stats.creditsRemaining <= 0)) {
-       toast({ title: "Insufficient Credits", description: "Cannot save active templates with 0 credits.", variant: "destructive" });
-       return;
+      toast({ title: "Insufficient Credits", description: "Cannot save active templates with 0 credits.", variant: "destructive" });
+      return;
     }
 
+    setIsSaving(true);
     try {
-      await saveTemplate({
+      let fileUrl = "";
+      // Upload file if new one selected
+      if (selectedFile) {
+        const upload = uploadFile(selectedFile);
+        if (upload) {
+          fileUrl = await upload.promise;
+        }
+      }
+
+      const templateData = {
         name: templateName,
         documentType,
         extractionFields: fields.map(f => f.name),
-      }, isDraft);
+        fileUrl: fileUrl || undefined
+      };
 
-      toast({
-        title: isDraft ? "Draft Saved" : "Template Saved",
-        description: `Successfully saved ${templateName}`,
-      });
+      if (templateId) {
+        await updateTemplate(templateId, { ...templateData, isDraft });
+        toast({
+          title: "Template Updated",
+          description: `Successfully updated ${templateName}`,
+        });
+      } else {
+        await saveTemplate(templateData, isDraft);
+        toast({
+          title: isDraft ? "Draft Saved" : "Template Saved",
+          description: `Successfully saved ${templateName}`,
+        });
+      }
 
       if (!isDraft) {
         router.push("/dashboard/templates");
       }
     } catch (error) {
+      console.error(error);
       toast({ title: "Error", description: "Failed to save template", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -74,12 +198,15 @@ export default function TemplateBuilderPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleSave(true)}>Save Draft</Button>
-          <Button 
+          <Button variant="outline" onClick={() => handleSave(true)} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Draft
+          </Button>
+          <Button
             onClick={() => handleSave(false)}
-            disabled={!stats || stats.creditsRemaining <= 0}
+            disabled={(!stats || stats.creditsRemaining <= 0) || isSaving}
           >
-            <Save className="mr-2 h-4 w-4" />
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Template
           </Button>
         </div>
@@ -88,16 +215,47 @@ export default function TemplateBuilderPage() {
       <div className="flex-1 grid grid-cols-12 gap-6 h-full min-h-0">
         {/* Left Panel - Document Preview */}
         <div className="col-span-12 lg:col-span-7 bg-muted/20 border-2 border-dashed border-muted-foreground/20 rounded-xl flex items-center justify-center relative overflow-hidden">
-          <div className="text-center p-8">
-            <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Plus className="h-8 w-8 text-muted-foreground" />
+          {selectedFile ? (
+            <div className="text-center p-8 w-full h-full flex flex-col items-center justify-center relative">
+              {selectedFile.type === 'application/pdf' ? (
+                <div className="w-full h-full overflow-auto bg-gray-100/50 rounded-lg p-4">
+                  <PdfPreview file={selectedFile} className="w-full shadow-lg" />
+                </div>
+              ) : (
+                <div className="h-20 w-16 bg-white shadow-sm border rounded-sm flex items-center justify-center mb-4 relative">
+                  <div className="absolute top-0 right-0 w-4 h-4 bg-muted-foreground/10" style={{ clipPath: "polygon(0 0, 0% 100%, 100% 0)" }}></div>
+                  <span className="text-xs font-bold text-muted-foreground">{selectedFile.name.split('.').pop()?.toUpperCase()}</span>
+                </div>
+              )}
+
+              <h3 className="text-lg font-semibold truncate max-w-xs">{selectedFile.name}</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+              </p>
+              <div className="flex gap-3 mt-6 z-10">
+                <Button variant="outline" onClick={clearFile}>Remove File</Button>
+                <Button variant="secondary" onClick={triggerFileInput}>Replace File</Button>
+              </div>
             </div>
-            <h3 className="text-lg font-semibold">Upload Sample Document</h3>
-            <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">
-              Upload a sample PDF to visually map fields to the extraction rules.
-            </p>
-            <Button className="mt-6" variant="secondary">Select File</Button>
-          </div>
+          ) : (
+            <div className="text-center p-8">
+              <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                <Plus className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold">Upload Sample Document</h3>
+              <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">
+                Upload a sample PDF to visually map fields to the extraction rules.
+              </p>
+              <Button className="mt-6" variant="secondary" onClick={triggerFileInput}>Select File</Button>
+            </div>
+          )}
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={handleFileSelect}
+          />
         </div>
 
         {/* Right Panel - Rules Configuration */}
@@ -113,15 +271,17 @@ export default function TemplateBuilderPage() {
                   <TabsTrigger value="fields">Fields</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
-                
+
                 <TabsContent value="fields" className="space-y-4">
-                  <div className="bg-primary/5 border border-primary/10 rounded-lg p-4 mb-4">
+                  <div className="bg-primary/5 border border-primary/10 rounded-lg p-4 mb-4 cursor-pointer hover:bg-primary/10 transition-colors" onClick={analyzeDocument}>
                     <div className="flex items-start gap-3">
-                      <Wand2 className="h-5 w-5 text-primary mt-0.5" />
+                      <Wand2 className={`h-5 w-5 text-primary mt-0.5 ${isAnalyzing ? 'animate-pulse' : ''}`} />
                       <div>
-                        <h4 className="font-semibold text-sm text-primary">AI Auto-Detect</h4>
+                        <h4 className="font-semibold text-sm text-primary">
+                          {isAnalyzing ? "Analyzing Document..." : "AI Auto-Detect"}
+                        </h4>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Upload a document to let AI suggest fields automatically.
+                          {isAnalyzing ? "Gemini is extracting fields..." : "Upload a document to let AI suggest fields automatically."}
                         </p>
                       </div>
                     </div>
@@ -134,8 +294,8 @@ export default function TemplateBuilderPage() {
                           {i + 1}
                         </div>
                         <div className="flex-1">
-                          <Input 
-                            value={field.name} 
+                          <Input
+                            value={field.name}
                             className="h-8 text-sm font-medium border-transparent bg-transparent focus-visible:bg-secondary focus-visible:border-input px-0"
                             onChange={(e) => {
                               const newFields = [...fields];
@@ -153,20 +313,20 @@ export default function TemplateBuilderPage() {
                         </Button>
                       </div>
                     ))}
-                    
+
                     <Button variant="outline" className="w-full border-dashed" onClick={addField}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Custom Field
                     </Button>
                   </div>
                 </TabsContent>
-                
+
                 <TabsContent value="settings">
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Template Name</label>
-                      <Input 
-                        placeholder="e.g. Standard Invoice" 
+                      <Input
+                        placeholder="e.g. Standard Invoice"
                         value={templateName}
                         onChange={(e) => setTemplateName(e.target.value)}
                       />
@@ -179,5 +339,13 @@ export default function TemplateBuilderPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TemplateBuilderPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <TemplateBuilderContent />
+    </Suspense>
   );
 }
