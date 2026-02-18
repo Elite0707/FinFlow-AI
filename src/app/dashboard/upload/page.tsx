@@ -29,6 +29,8 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { format } from "date-fns";
 import { countPdfPages } from "@/utils/pdfHelpers"; // Import Helper
+import { ReviewUploadModal } from "@/components/ReviewUploadModal";
+import { v4 as uuidv4 } from 'uuid';
 
 interface UploadingFile {
   id: string; // unique id for key
@@ -43,6 +45,9 @@ interface UploadingFile {
 export default function UploadPage() {
   const [activeTab, setActiveTab] = useState("upload");
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  const [stagingFiles, setStagingFiles] = useState<File[]>([]);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
@@ -86,8 +91,11 @@ export default function UploadPage() {
 
     const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
 
-    // Filter out files that are already being uploaded
-    const potentiallyValidFiles = validFiles.filter(f => !uploadingFiles.some(uf => uf.name === f.name && uf.status === "uploading"));
+    // Filter out files that are already being uploaded or staged
+    const potentiallyValidFiles = validFiles.filter(f =>
+      !uploadingFiles.some(uf => uf.name === f.name && uf.status === "uploading") &&
+      !stagingFiles.some(sf => sf.name === f.name)
+    );
 
     if (potentiallyValidFiles.length === 0) return;
 
@@ -107,10 +115,10 @@ export default function UploadPage() {
             });
             continue; // Skip this file
           }
-        } catch (error) {
+        } catch (error: any) {
           toast({
             title: "PDF Error",
-            description: `Could not read ${file.name}. It might be password protected.`,
+            description: error.message || `Could not read ${file.name}.`,
             variant: "destructive"
           });
           continue;
@@ -132,7 +140,18 @@ export default function UploadPage() {
       return;
     }
 
-    const newUploads = finalFiles.map(file => ({
+    // Add to staging instead of uploading immediately
+    setStagingFiles(prev => [...prev, ...finalFiles]);
+    setIsReviewModalOpen(true);
+  };
+
+  const handleConfirmUpload = async (batchName: string) => {
+    if (stagingFiles.length === 0) return;
+
+    setIsUploading(true);
+    const batchId = uuidv4();
+
+    const newUploads = stagingFiles.map(file => ({
       id: Math.random().toString(36).substring(7),
       fileObject: file,
       name: file.name,
@@ -142,16 +161,24 @@ export default function UploadPage() {
 
     setUploadingFiles(prev => [...prev, ...newUploads]);
 
+    // Track completion and success
+    let completedCount = 0;
+    const successfulFiles = new Set<File>();
+
     // Process each file
-    newUploads.forEach(async (uploadItem) => {
+    const uploadPromises = newUploads.map(async (uploadItem) => {
       try {
-        const upload = uploadFile(uploadItem.fileObject, (progress) => {
-          setUploadingFiles(prev =>
-            prev.map(item =>
-              item.id === uploadItem.id ? { ...item, progress } : item
-            )
-          );
-        });
+        const upload = uploadFile(
+          uploadItem.fileObject,
+          (progress) => {
+            setUploadingFiles(prev =>
+              prev.map(item =>
+                item.id === uploadItem.id ? { ...item, progress } : item
+              )
+            );
+          },
+          { batchId, batchName }
+        );
 
         if (!upload) return;
 
@@ -170,24 +197,12 @@ export default function UploadPage() {
             item.id === uploadItem.id ? { ...item, status: "completed", progress: 100 } : item
           )
         );
-
-        toast({
-          title: "Upload Successful",
-          description: `${uploadItem.name} has been uploaded.`,
-        });
-
-        // Remove from list after a short delay
-        setTimeout(() => {
-          setUploadingFiles(prev => prev.filter(item => item.id !== uploadItem.id));
-        }, 2000);
+        successfulFiles.add(uploadItem.fileObject);
+        completedCount++;
 
       } catch (error: any) {
         if (error.code === 'storage/canceled') {
           setUploadingFiles(prev => prev.filter(item => item.id !== uploadItem.id));
-          toast({
-            title: "Upload Canceled",
-            description: `${uploadItem.name} upload was canceled.`,
-          });
           return;
         }
 
@@ -197,13 +212,39 @@ export default function UploadPage() {
             item.id === uploadItem.id ? { ...item, status: "error", error: "Upload failed" } : item
           )
         );
-        toast({
-          title: "Upload Failed",
-          description: `Failed to upload ${uploadItem.name}`,
-          variant: "destructive"
-        });
       }
     });
+
+    await Promise.all(uploadPromises);
+
+    setIsUploading(false);
+
+    if (successfulFiles.size === newUploads.length) {
+      toast({
+        title: "Batch Upload Successful",
+        description: `Successfully uploaded ${completedCount} files to batch "${batchName}".`,
+      });
+      setStagingFiles([]);
+      setIsReviewModalOpen(false);
+
+      // Remove from list after a short delay
+      setTimeout(() => {
+        setUploadingFiles(prev => prev.filter(item => item.status !== 'completed'));
+      }, 3000);
+    } else {
+      toast({
+        title: "Upload Completed with Errors",
+        description: `${newUploads.length - successfulFiles.size} file(s) failed to upload. You can retry them.`,
+        variant: "destructive"
+      });
+
+      // Option C: Remove successful files from staging, keep failed ones
+      setStagingFiles(prev => prev.filter(f => !successfulFiles.has(f)));
+
+      // Also cleanup uploadingFiles to remove the successful ones from the background state
+      // so they don't clutter the internal state, though strict UI filtering happens via stagingFiles in the modal.
+      setUploadingFiles(prev => prev.filter(item => item.status !== 'completed'));
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -248,6 +289,15 @@ export default function UploadPage() {
         variant: "destructive"
       });
     }
+  };
+
+  const handleRemoveStagedFile = (index: number) => {
+    setStagingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleCancelStaging = () => {
+    setStagingFiles([]);
+    setIsReviewModalOpen(false);
   };
 
   return (
@@ -321,8 +371,12 @@ export default function UploadPage() {
             </div>
           </div>
 
-          {/* Active Uploads */}
-          {uploadingFiles.length > 0 && (
+          {/* Active Uploads (Keep strictly for background/minimized uploads if modal is closed but verify needs modal open)
+              Actually, the modal blocks interaction so this might not be visible explicitly if modal is open.
+              But if we close modal after success, this list might be empty.
+              We can keep it for any specific edge cases or if we change UX later. 
+          */}
+          {uploadingFiles.length > 0 && !isReviewModalOpen && (
             <Card>
               <CardHeader>
                 <CardTitle>Uploading Files</CardTitle>
@@ -515,6 +569,16 @@ export default function UploadPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ReviewUploadModal
+        isOpen={isReviewModalOpen}
+        onClose={handleCancelStaging}
+        files={stagingFiles}
+        onRemove={handleRemoveStagedFile}
+        onConfirm={handleConfirmUpload}
+        uploadingFiles={uploadingFiles}
+        isUploading={isUploading}
+      />
     </div>
   );
 }

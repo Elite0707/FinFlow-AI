@@ -2,24 +2,20 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 // Set worker source
 // This is required for pdf.js to work in Next.js environment without manual worker copying
-if (typeof window !== 'undefined' && 'Worker' in window) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-}
-
-/**
- * Counts the number of pages in a PDF file.
- * @param file The PDF file object
- * @returns Promise resolving to the number of pages
- */
 export const countPdfPages = async (file: File): Promise<number> => {
     try {
+        // Ensure worker is set before loading
+        if (typeof window !== 'undefined' && 'Worker' in window) {
+            // Use CDN to avoid local file issues
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+        }
+
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         return pdf.numPages;
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error reading PDF:", error);
-        // If we can't read it (e.g. password protected), we might want to throw or return a specific error code
-        // For now, re-throwing so the caller knows something went wrong
-        throw new Error("Could not read PDF. File might be corrupted or password protected.");
+        // Throw the actual error so we can debug, or a more descriptive one
+        throw new Error(error.message || "Could not read PDF. File might be corrupted or password protected.");
     }
 };

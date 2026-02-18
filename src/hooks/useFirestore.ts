@@ -211,7 +211,7 @@ export function useFirestore() {
     return () => unsubscribeAuth();
   }, []);
 
-  const uploadFile = (file: File, onProgress?: (progress: number) => void): { promise: Promise<string>, cancel: () => void } | undefined => {
+  const uploadFile = (file: File, onProgress?: (progress: number) => void, metadata?: { batchId?: string; batchName?: string }): { promise: Promise<string>, cancel: () => void } | undefined => {
     if (!user) return;
 
     // Check if file with same name exists in Firestore to avoid duplicates or handle overwrite
@@ -256,6 +256,7 @@ export function useFirestore() {
               size: file.size,
               type: file.type,
               createdAt: serverTimestamp(),
+              ...metadata, // Add batch metadata if present
             });
 
             // Increment usage count
