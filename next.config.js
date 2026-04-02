@@ -8,6 +8,7 @@ const nextConfig = {
         config.resolve.alias.canvas = false;
         return config;
     },
+    transpilePackages: ['pdfjs-dist'],
 };
 
 module.exports = nextConfig;

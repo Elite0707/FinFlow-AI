@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   doc,
   onSnapshot,
@@ -357,7 +357,7 @@ export function useFirestore() {
     });
   };
 
-  const getTemplate = async (templateId: string) => {
+  const getTemplate = useCallback(async (templateId: string) => {
     if (!user) return null;
     const templateRef = doc(db, `users/${user.uid}/templates/${templateId}`);
     const docSnap = await getDoc(templateRef);
@@ -365,7 +365,7 @@ export function useFirestore() {
       return { id: docSnap.id, ...docSnap.data() } as Template;
     }
     return null;
-  };
+  }, [user]);
 
   return {
     user,

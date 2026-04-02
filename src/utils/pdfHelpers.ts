@@ -1,13 +1,20 @@
-import * as pdfjsLib from 'pdfjs-dist';
+// No top-level import to avoid SSR/build issues
+// import * as pdfjsLib from 'pdfjs-dist';
 
-// Set worker source
-// This is required for pdf.js to work in Next.js environment without manual worker copying
 export const countPdfPages = async (file: File): Promise<number> => {
     try {
+        // Dynamically import pdfjs-dist
+        const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
         // Ensure worker is set before loading
         if (typeof window !== 'undefined' && 'Worker' in window) {
             // Use CDN to avoid local file issues
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+            try {
+                // @ts-ignore
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
+            } catch (e) {
+                console.warn("Worker configuration warning:", e);
+            }
         }
 
         const arrayBuffer = await file.arrayBuffer();

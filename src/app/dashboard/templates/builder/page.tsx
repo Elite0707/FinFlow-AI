@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ChevronLeft, Save, Plus, Wand2, ArrowRight, Loader2 } from "lucide-react";
+import { ChevronLeft, Save, Plus, Wand2, ArrowRight, Loader2, Trash2, GripVertical } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useFirestore } from "@/hooks/useFirestore";
@@ -21,16 +21,33 @@ function TemplateBuilderContent() {
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState("New Template");
   const [documentType, setDocumentType] = useState("Invoice");
-  const [fields, setFields] = useState([
-    { name: "Invoice Number", type: "Text", required: true },
-    { name: "Date", type: "Date", required: true },
-    { name: "Total Amount", type: "Currency", required: true },
-  ]);
+  const [fields, setFields] = useState<Array<{ name: string; type: string; required: boolean }>>([]);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag and drop refs
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+
+  const handleSort = () => {
+    if (dragItem.current !== null && dragOverItem.current !== null) {
+      let _fields = [...fields];
+      // remove and save the dragged item
+      const draggedItemContent = _fields.splice(dragItem.current, 1)[0];
+      // switch the position
+      _fields.splice(dragOverItem.current, 0, draggedItemContent);
+
+      // reset refs
+      dragItem.current = null;
+      dragOverItem.current = null;
+
+      // update state
+      setFields(_fields);
+    }
+  };
 
   useEffect(() => {
     if (templateId && user) {
@@ -41,7 +58,7 @@ function TemplateBuilderContent() {
             setTemplateName(template.name);
             setDocumentType(template.documentType);
             if (template.extractionFields) {
-              setFields(template.extractionFields.map(field => ({
+              setFields(template.extractionFields.map((field: string) => ({
                 name: field,
                 type: "Text",
                 required: false
@@ -183,6 +200,10 @@ function TemplateBuilderContent() {
     setFields([...fields, { name: "New Field", type: "Text", required: false }]);
   };
 
+  const removeField = (indexToRemove: number) => {
+    setFields(fields.filter((_, index) => index !== indexToRemove));
+  };
+
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col">
       <div className="flex items-center justify-between mb-6">
@@ -260,12 +281,12 @@ function TemplateBuilderContent() {
 
         {/* Right Panel - Rules Configuration */}
         <div className="col-span-12 lg:col-span-5 flex flex-col h-full overflow-hidden">
-          <Card className="flex-1 flex flex-col border-border/50 shadow-none">
-            <CardHeader className="pb-3">
+          <Card className="flex-1 flex flex-col border-border/50 shadow-none min-h-0">
+            <CardHeader className="pb-3 shrink-0">
               <CardTitle>Extraction Rules</CardTitle>
               <CardDescription>Configure fields to extract.</CardDescription>
             </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto pr-2">
+            <CardContent className="flex-1 overflow-y-auto pr-2 min-h-0">
               <Tabs defaultValue="fields" className="w-full">
                 <TabsList className="w-full grid grid-cols-2 mb-4">
                   <TabsTrigger value="fields">Fields</TabsTrigger>
@@ -289,8 +310,19 @@ function TemplateBuilderContent() {
 
                   <div className="space-y-3">
                     {fields.map((field, i) => (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-md border border-border bg-card hover:border-primary/50 transition-colors group">
-                        <div className="h-6 w-6 rounded bg-secondary flex items-center justify-center text-xs font-mono text-muted-foreground">
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 p-3 rounded-md border border-border bg-card hover:border-primary/50 transition-colors group relative"
+                        draggable
+                        onDragStart={() => (dragItem.current = i)}
+                        onDragEnter={() => (dragOverItem.current = i)}
+                        onDragEnd={handleSort}
+                        onDragOver={(e) => e.preventDefault()}
+                      >
+                        <div className="cursor-move text-muted-foreground/50 hover:text-foreground transition-colors mr-[-4px]">
+                          <GripVertical className="h-5 w-5" />
+                        </div>
+                        <div className="h-6 w-6 rounded bg-secondary flex shrink-0 items-center justify-center text-xs font-mono text-muted-foreground">
                           {i + 1}
                         </div>
                         <div className="flex-1">
@@ -308,8 +340,13 @@ function TemplateBuilderContent() {
                             {field.required && <Badge variant="secondary" className="text-[10px] h-4 px-1">Required</Badge>}
                           </div>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100">
-                          <ArrowRight className="h-3 w-3" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+                          onClick={() => removeField(i)}
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     ))}

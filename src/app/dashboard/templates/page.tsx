@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { SelectDocumentsModal } from "@/components/SelectDocumentsModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
+import { processBatch } from "@/utils/batchProcessor";
 
 export default function TemplatesPage() {
   const { templates, loading, deleteTemplate, saveTemplate, userFiles } = useFirestore(); // Fetch userFiles
@@ -43,7 +44,7 @@ export default function TemplatesPage() {
     setSelectModalOpen(true);
   };
 
-  const handleProceedWithFiles = (fileIds: string[]) => {
+  const handleProceedWithFiles = async (fileIds: string[]) => {
     if (!selectedTemplateForUse) return;
 
     // Logic to proceed with selected files. 
@@ -69,23 +70,60 @@ export default function TemplatesPage() {
     // I'll navigate to a 'run' page or builder with items in state/query.
     // Let's print to console and close for now, or just navigate to builder with IDs.
 
-    console.log("Proceeding with files:", fileIds, "for template:", selectedTemplateForUse.name);
+    // console.log("Proceeding with files:", fileIds, "for template:", selectedTemplateForUse.name);
 
-    // Navigate to builder for now as a safe fallback or maybe a new runner page?
-    // router.push(`/dashboard/templates/run?templateId=${selectedTemplateForUse.id}&files=${fileIds.join(',')}`);
-    // But that page doesn't exist. 
-    // Let's just close modal and show toast, and maybe open builder with first file?
-    // Actually, let's look at `handleEdit` again. It goes to `builder?id=...`.
-    // I will go to `builder` and pass `fileIds` in query param? URL length limit...
-    // I'll stick to a Toast for "Batch Processing Started" to mimic a backend process if that's the goal.
-    // "The developer is currently leaning towards...".
-    // Let's implement a dummy navigation that looks like it's doing something.
+    // Filter userFiles to get the full file objects for the selected IDs
+    const filesToProcess = userFiles
+      .filter(f => fileIds.includes(f.id))
+      .map(f => ({
+        name: f.name,
+        // @ts-ignore
+        url: f.downloadURL
+      }));
+
+    if (filesToProcess.length === 0) {
+      toast({ title: "Error", description: "No valid files selected.", variant: "destructive" });
+      return;
+    }
+
+    setSelectModalOpen(false);
+
+    // Start processing
+    // We can show a toast that updates or a separate progress UI.
+    // For simplicity, we'll use a toast that we dismiss/update, or just a "Started" toast and a "Finished" toast.
 
     toast({
-      title: "Processing Started",
-      description: `Applying ${selectedTemplateForUse.name} to ${fileIds.length} files.`,
+      title: "Batch Processing Started",
+      description: `Analyzing ${filesToProcess.length} files with ${selectedTemplateForUse.name}...`,
     });
-    setSelectModalOpen(false);
+
+    try {
+      await processBatch(
+        filesToProcess,
+        {
+          name: selectedTemplateForUse.name,
+          extractionFields: selectedTemplateForUse.extractionFields || []
+        },
+        (current, total, message) => {
+          // Optional: Update UI or just log
+          console.log(`Progress: ${current}/${total} - ${message}`);
+        }
+      );
+
+      toast({
+        title: "Batch Complete",
+        description: "Excel report has been generated and downloaded.",
+        className: "bg-green-500 text-white"
+      });
+
+    } catch (e) {
+      console.error("Batch processing error:", e);
+      toast({
+        title: "Batch Failed",
+        description: "An error occurred while processing the batch.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleDuplicate = async (template: any) => {
