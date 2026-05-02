@@ -9,14 +9,103 @@ import { useFirestore } from "@/hooks/useFirestore";
 import { Progress } from "@/components/ui/progress";
 import { format } from "date-fns";
 import { PRICING_PLANS } from "@/app/pricing/constants";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SubscriptionPage() {
   const { stats, usage, subscriptions, loading, user } = useFirestore();
 
   if (loading) {
-    return <div className="p-8 text-center flex items-center justify-center gap-2">
-      <Loader2 className="h-4 w-4 animate-spin" /> Loading subscription details...
-    </div>;
+    return (
+      <div className="space-y-8 max-w-5xl mx-auto">
+        {/* Header skeleton */}
+        <div>
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-4 w-96 mt-2" />
+        </div>
+
+        {/* 2-column grid skeleton */}
+        <div className="grid md:grid-cols-2 gap-8 items-start">
+          {/* Current Plan card skeleton */}
+          <Card className="border-primary/50 bg-primary/5">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-6 w-28" />
+                <Skeleton className="h-5 w-14 rounded-full" />
+              </div>
+              <Skeleton className="h-4 w-60 mt-1" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-12" />
+                </div>
+                <Skeleton className="h-2 w-full rounded-full" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <div className="pt-4 space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-40" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Skeleton className="h-10 w-full" />
+            </CardFooter>
+          </Card>
+
+          {/* Enterprise card skeleton */}
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-44" />
+              <Skeleton className="h-4 w-72 mt-1" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 w-44" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Skeleton className="h-10 w-full" />
+            </CardFooter>
+          </Card>
+        </div>
+
+        {/* Usage History card skeleton */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-64 mt-1" />
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border border-border overflow-hidden">
+              <div className="grid grid-cols-4 p-4 bg-muted/50">
+                <Skeleton className="h-4 w-10" />
+                <Skeleton className="h-4 w-10" />
+                <Skeleton className="h-4 w-14" />
+                <Skeleton className="h-4 w-16 ml-auto" />
+              </div>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="grid grid-cols-4 p-4 border-t border-border">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                  <Skeleton className="h-4 w-12 ml-auto" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // Find current plan details from constants

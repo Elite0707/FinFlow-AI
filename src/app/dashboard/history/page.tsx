@@ -30,6 +30,7 @@ import {
 import { useFirestore } from "@/hooks/useFirestore";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HistoryPage() {
   const { userFiles: history = [], loading, deleteUserFile } = useFirestore();
@@ -52,7 +53,59 @@ export default function HistoryPage() {
   };
 
   if (loading) {
-    return <div className="p-8 text-center">Loading history...</div>;
+    return (
+      <div className="space-y-8">
+        {/* Header skeleton */}
+        <div>
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-4 w-80 mt-2" />
+        </div>
+
+        {/* Search & filters skeleton */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Skeleton className="h-10 w-full sm:w-80" />
+            <Skeleton className="h-10 w-10" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-9 w-28" />
+            <Skeleton className="h-9 w-28" />
+          </div>
+        </div>
+
+        {/* Table skeleton */}
+        <div className="rounded-md border border-border bg-card">
+          <div className="border-b border-border">
+            <div className="grid grid-cols-6 p-4">
+              <Skeleton className="h-4 w-8" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-14" />
+              <Skeleton className="h-4 w-14 ml-auto" />
+            </div>
+          </div>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="grid grid-cols-6 p-4 border-b border-border last:border-0 items-center">
+              <Skeleton className="h-3 w-16" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-4 rounded" />
+                <div>
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-24 mt-1" />
+                </div>
+              </div>
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-8 w-8 rounded ml-auto" />
+            </div>
+          ))}
+        </div>
+
+        <Skeleton className="h-4 w-28" />
+      </div>
+    );
   }
 
   return (

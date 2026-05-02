@@ -31,6 +31,7 @@ import { format } from "date-fns";
 import { countPdfPages } from "@/utils/pdfHelpers"; // Import Helper
 import { ReviewUploadModal } from "@/components/ReviewUploadModal";
 import { v4 as uuidv4 } from 'uuid';
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface UploadingFile {
   id: string; // unique id for key
@@ -458,7 +459,40 @@ export default function UploadPage() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading files...</div>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>File Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Size</TableHead>
+                        <TableHead>Uploaded</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Skeleton className="h-4 w-4 rounded" />
+                              <Skeleton className="h-4 w-40" />
+                            </div>
+                          </TableCell>
+                          <TableCell><Skeleton className="h-3 w-10" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Skeleton className="h-8 w-8 rounded" />
+                              <Skeleton className="h-8 w-8 rounded" />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               ) : userFiles.length === 0 ? (
                 <div className="text-center py-12 border-2 border-dashed rounded-lg">
                   <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />

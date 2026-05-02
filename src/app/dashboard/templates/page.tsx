@@ -21,6 +21,7 @@ import { formatDistanceToNow } from "date-fns";
 import { SelectDocumentsModal } from "@/components/SelectDocumentsModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
 import { processBatch } from "@/utils/batchProcessor";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function TemplatesPage() {
   const { templates, loading, deleteTemplate, saveTemplate, userFiles } = useFirestore(); // Fetch userFiles
@@ -161,7 +162,56 @@ export default function TemplatesPage() {
   };
 
   if (loading) {
-    return <div className="p-8 text-center">Loading templates...</div>;
+    return (
+      <div className="space-y-8">
+        {/* Header skeleton */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-9 w-52" />
+            <Skeleton className="h-4 w-72 mt-2" />
+          </div>
+          <Skeleton className="h-10 w-44" />
+        </div>
+
+        {/* Template cards grid skeleton */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="flex flex-col">
+              <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-lg" />
+                  <div>
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-3 w-24 mt-1.5" />
+                  </div>
+                </div>
+                <Skeleton className="h-8 w-8 rounded" />
+              </CardHeader>
+              <CardContent className="flex-1 pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Skeleton className="h-3 w-12 mb-1" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                  <div>
+                    <Skeleton className="h-3 w-14 mb-1" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Skeleton className="h-5 w-20 rounded-full" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                </div>
+              </CardContent>
+              <CardFooter className="pt-4 border-t border-border/50">
+                <Skeleton className="h-9 w-full" />
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
