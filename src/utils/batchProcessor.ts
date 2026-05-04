@@ -35,31 +35,69 @@ export const processBatch = async (
 
         try {
             // 1. Fetch the PDF from Firebase so we can send it to our API
-            const response = await fetch(file.url);
-            const blob = await response.blob();
+            let blob: Blob;
+            try {
+                const response = await fetch(file.url);
+                if (!response.ok) {
+                    throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+                }
+                const rawBlob = await response.blob();
+
+                // Firebase blobs often lose their MIME type (comes as '' or 'application/octet-stream').
+                // Gemini needs the correct mimeType, so we derive it from the file extension.
+                const ext = file.name.split('.').pop()?.toLowerCase() || '';
+                const mimeMap: Record<string, string> = {
+                    'pdf': 'application/pdf',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'webp': 'image/webp',
+                };
+                const correctType = mimeMap[ext] || rawBlob.type || 'application/pdf';
+                blob = new Blob([rawBlob], { type: correctType });
+
+            } catch (fetchError) {
+                throw new Error(`File download failed for "${file.name}": ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+            }
 
             // 2. Prepare the payload (File + User's Custom Fields)
             const formData = new FormData();
             formData.append("file", blob, file.name);
             formData.append("fields", JSON.stringify(template.extractionFields));
 
-            // 3. Call your new dynamic API
+            // 3. Call the analysis API
             const apiRes = await fetch('/api/templates/analyze', {
                 method: 'POST',
                 body: formData
             });
 
-            if (!apiRes.ok) throw new Error("API Failed");
+            if (!apiRes.ok) {
+                // Try to extract the server's error message from the response body
+                let serverMessage = '';
+                try {
+                    const errorBody = await apiRes.json();
+                    serverMessage = errorBody.error || errorBody.message || '';
+                } catch {
+                    // Response body wasn't JSON, use status text
+                    serverMessage = apiRes.statusText;
+                }
+                throw new Error(`API ${apiRes.status}: ${serverMessage || 'Unknown server error'}`);
+            }
 
             const aiData = await apiRes.json();
 
-            // 4. Merge the AI's perfect JSON into our row
+            // 4. Merge the AI's JSON into our row
+            if (!aiData.fields || typeof aiData.fields !== 'object') {
+                throw new Error('Invalid API response: missing "fields" object');
+            }
+
             row.Status = 'Success';
             Object.assign(row, aiData.fields);
 
         } catch (error) {
-            console.error(`Error on ${file.name}:`, error);
-            row.Status = `Error: ${error instanceof Error ? error.message : String(error)}`;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`[BatchProcessor] Error on "${file.name}":`, errorMessage);
+            row.Status = `Error: ${errorMessage}`;
         }
 
         results.push(row);
@@ -110,38 +148,46 @@ export const processBatch = async (
 
         // Create Company Sheet
         const sheet = workbook.addWorksheet(pageNo);
-        sheet.columns = [
-            { width: 15 }, // DATE
-            { width: 30 }, // PARTICULARS
-            { width: 15 }, // DEBIT
-            { width: 15 }, // CREDIT
-            { width: 15 }  // BALANCE
-        ];
 
-        // Add Ledger Headers
-        sheet.addRow(['NAME  :---', company, '', '', '']);
-        sheet.addRow(['', '', '', '', '']);
-        const headerRow = sheet.addRow(['DATE', 'PARTICULARS', 'DEBIT', 'CREDIT', 'BALANCE']);
+        // Dynamic columns from the user's template fields
+        const templateFields = template.extractionFields;
+        const colWidths = templateFields.map(f => {
+          const len = f.length;
+          return { width: Math.max(15, Math.min(40, len * 1.5 + 5)) };
+        });
+        sheet.columns = colWidths;
+
+        // Add Company Name header
+        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, templateFields.length - 2)).fill('')]);
+        sheet.addRow(Array(templateFields.length).fill(''));
+
+        // Add column headers from the template fields
+        const headerRow = sheet.addRow(templateFields);
         headerRow.font = { bold: true };
+        headerRow.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE2EFDA' }
+          };
+          cell.border = {
+            bottom: { style: 'thin', color: { argb: 'FF999999' } }
+          };
+        });
         sheet.getRow(1).font = { bold: true };
 
-        // 4e. Map Extracted Data to Ledger Format
+        // Map extracted data directly to template field columns
         groupedData[company].forEach(dataRow => {
-            if (dataRow.Status.includes('Error')) return; // Skip failed extractions
+            if (dataRow.Status && dataRow.Status.includes('Error')) return;
 
-            // Find the closest matching keys for Date, Invoice, and Amount
-            const dateKey = Object.keys(dataRow).find(k => k.toLowerCase().includes('date'));
-            const invKey = Object.keys(dataRow).find(k => k.toLowerCase().includes('inv') || k.toLowerCase().includes('num'));
-            const amtKey = Object.keys(dataRow).find(k => k.toLowerCase().includes('total') || k.toLowerCase().includes('amount'));
+            const rowValues = templateFields.map(field => {
+              // Try exact match first, then case-insensitive match
+              if (dataRow[field] !== undefined) return dataRow[field];
+              const key = Object.keys(dataRow).find(k => k.toLowerCase() === field.toLowerCase());
+              return key ? dataRow[key] : '';
+            });
 
-            const dateVal = dateKey ? dataRow[dateKey] : '';
-            const invVal = (invKey && dataRow[invKey] && dataRow[invKey].trim() !== "")
-                ? dataRow[invKey]
-                : dataRow.FileName;
-            const amtVal = amtKey ? dataRow[amtKey] : '';
-
-            // Assuming invoices are Sales (Debits). Adjust if you have payment receipts (Credits).
-            sheet.addRow([dateVal, invVal, amtVal, '', '']);
+            sheet.addRow(rowValues);
         });
     });
 

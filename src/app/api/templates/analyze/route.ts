@@ -23,6 +23,17 @@ export async function POST(req: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const base64Data = Buffer.from(arrayBuffer).toString("base64");
 
+        // Determine MIME type with fallback — blobs from Firebase can arrive with empty type
+        const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+        const extMimeMap: Record<string, string> = {
+            'pdf': 'application/pdf',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'webp': 'image/webp',
+        };
+        const mimeType = file.type || extMimeMap[fileExt] || 'application/pdf';
+
         // 2. DYNAMIC PROMPT: Inject the user's exact fields or auto-detect
         const prompt = userFields.length > 0
             ? `
@@ -49,7 +60,7 @@ export async function POST(req: Request) {
 
         const result = await model.generateContent([
             prompt,
-            { inlineData: { data: base64Data, mimeType: file.type } }
+            { inlineData: { data: base64Data, mimeType } }
         ]);
 
         const text = result.response.text();
@@ -59,7 +70,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ fields: data });
 
     } catch (error) {
-        console.error("AI Extraction Error:", error);
-        return NextResponse.json({ error: "Extraction failed" }, { status: 500 });
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error("AI Extraction Error:", message);
+        return NextResponse.json(
+            { error: `Extraction failed: ${message}` },
+            { status: 500 }
+        );
     }
 }

@@ -48,31 +48,6 @@ export default function TemplatesPage() {
   const handleProceedWithFiles = async (fileIds: string[]) => {
     if (!selectedTemplateForUse) return;
 
-    // Logic to proceed with selected files. 
-    // The prompt says "Keep the 'Proceed' button logic the same (it just expects an array of file objects/IDs)".
-    // Since the previous "Use" button just went to builder (handleEdit), the user likely wants to 
-    // utilize these files in the builder or a new "Run" view. 
-    // Given the builder only supports one file input right now, we might need to update builder 
-    // OR assuming there's a different flow. 
-    // "The developer... expects an array...". 
-    // Let's assume we navigate to a "run" page or back to builder with files.
-    // However, since I can't change the whole app structure blindly, checking builder again:
-    // Builder doesn't seem to take files from URL.
-    // But the prompt says "Refactor... Modal... Keep proceed logic same".
-    // "Same" as what? The previous logic was `handleEdit` which just opened builder.
-    // Maybe the user implies the "Proceed" button *inside the modal*? 
-    // If I just created the modal, there was no previous proceed button logic unless I replaced an existing one.
-    // I will log for now and maybe navigate to builder with a query param check?
-    // Actually, asking the user might be best, but I should try to infer.
-    // "Keep the 'Proceed' button logic the same" -> This strongly implies there WAS a modal and I missed it.
-    // But I grep'd and found nothing. 
-    // Wait, `handleEdit` was on "Use Template".
-    // Maybe the user meant "Keep the underlying action of applying a template to files the same"?
-    // I'll navigate to a 'run' page or builder with items in state/query.
-    // Let's print to console and close for now, or just navigate to builder with IDs.
-
-    // console.log("Proceeding with files:", fileIds, "for template:", selectedTemplateForUse.name);
-
     // Filter userFiles to get the full file objects for the selected IDs
     const filesToProcess = userFiles
       .filter(f => fileIds.includes(f.id))
@@ -89,13 +64,9 @@ export default function TemplatesPage() {
 
     setSelectModalOpen(false);
 
-    // Start processing
-    // We can show a toast that updates or a separate progress UI.
-    // For simplicity, we'll use a toast that we dismiss/update, or just a "Started" toast and a "Finished" toast.
-
     toast({
       title: "Batch Processing Started",
-      description: `Analyzing ${filesToProcess.length} files with ${selectedTemplateForUse.name}...`,
+      description: `Analyzing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''} with "${selectedTemplateForUse.name}"...`,
     });
 
     try {
@@ -106,7 +77,6 @@ export default function TemplatesPage() {
           extractionFields: selectedTemplateForUse.extractionFields || []
         },
         (current, total, message) => {
-          // Optional: Update UI or just log
           console.log(`Progress: ${current}/${total} - ${message}`);
         }
       );
@@ -118,10 +88,11 @@ export default function TemplatesPage() {
       });
 
     } catch (e) {
-      console.error("Batch processing error:", e);
+      const errorDetail = e instanceof Error ? e.message : "An unexpected error occurred.";
+      console.error("[Templates] Batch processing error:", errorDetail);
       toast({
-        title: "Batch Failed",
-        description: "An error occurred while processing the batch.",
+        title: "Batch Processing Failed",
+        description: errorDetail,
         variant: "destructive"
       });
     }

@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useFirestore } from "@/hooks/useFirestore";
 
 export default function DashboardLayout({
@@ -42,6 +42,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { stats, usage, user } = useFirestore();
 
   const handleSignOut = async () => {
@@ -67,20 +68,20 @@ export default function DashboardLayout({
         </div>
 
         <div className="flex-1 overflow-auto py-6 px-3">
-          <nav className="space-y-1">
-            <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" active />
-            <NavItem href="/dashboard/upload" icon={<Upload className="h-5 w-5" />} label="Upload Documents" />
-            <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" />
-            <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" />
+          <nav className="space-y-2">
+            <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" active={pathname === "/dashboard"} />
+            <NavItem href="/dashboard/upload" icon={<Upload className="h-5 w-5" />} label="Upload Documents" active={pathname.startsWith("/dashboard/upload")} />
+            <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" active={pathname.startsWith("/dashboard/history")} />
+            <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" active={pathname.startsWith("/dashboard/templates")} />
           </nav>
 
           <div className="mt-8">
-            <h3 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <h3 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               Settings
             </h3>
-            <nav className="space-y-1">
-              <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-5 w-5" />} label="Subscription" />
-              <NavItem href="/dashboard/settings" icon={<Settings className="h-5 w-5" />} label="Settings" />
+            <nav className="space-y-2">
+              <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-5 w-5" />} label="Subscription" active={pathname.startsWith("/dashboard/subscription")} />
+              <NavItem href="/dashboard/settings" icon={<Settings className="h-5 w-5" />} label="Settings" active={pathname.startsWith("/dashboard/settings")} />
             </nav>
           </div>
         </div>
@@ -149,13 +150,13 @@ export default function DashboardLayout({
                       <span>FinFlow AI</span>
                     </div>
                   </div>
-                  <nav className="flex-1 py-6 px-3 space-y-1">
-                    <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" />
-                    <NavItem href="/dashboard/upload" icon={<Upload className="h-5 w-5" />} label="Upload Documents" />
-                    <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" />
-                    <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" />
-                    <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-5 w-5" />} label="Subscription" />
-                    <NavItem href="/dashboard/settings" icon={<Settings className="h-5 w-5" />} label="Settings" />
+                  <nav className="flex-1 py-6 px-3 space-y-2">
+                    <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" active={pathname === "/dashboard"} />
+                    <NavItem href="/dashboard/upload" icon={<Upload className="h-5 w-5" />} label="Upload Documents" active={pathname.startsWith("/dashboard/upload")} />
+                    <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" active={pathname.startsWith("/dashboard/history")} />
+                    <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" active={pathname.startsWith("/dashboard/templates")} />
+                    <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-5 w-5" />} label="Subscription" active={pathname.startsWith("/dashboard/subscription")} />
+                    <NavItem href="/dashboard/settings" icon={<Settings className="h-5 w-5" />} label="Settings" active={pathname.startsWith("/dashboard/settings")} />
                   </nav>
                 </div>
               </SheetContent>
@@ -280,10 +281,14 @@ function NavItem({ href, icon, label, active = false }: { href: string; icon: Re
   return (
     <Link href={href}>
       <Button
-        variant={active ? "secondary" : "ghost"}
-        className={`w-full justify-start ${active ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+        variant="ghost"
+        className={`w-full justify-start h-10 ${
+          active
+            ? "bg-primary/15 text-primary font-semibold hover:bg-primary/20 hover:text-primary border border-primary/20"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+        }`}
       >
-        <span className={`mr-3 ${active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+        <span className={`mr-3 ${active ? "text-primary" : ""}`}>
           {icon}
         </span>
         {label}
