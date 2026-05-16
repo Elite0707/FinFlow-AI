@@ -19,6 +19,8 @@ import {
   FileText,
   Calendar,
   RefreshCw,
+  Files,
+  AlertCircle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -33,8 +35,10 @@ import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HistoryPage() {
-  const { userFiles: history = [], loading, deleteUserFile } = useFirestore();
+  const { processedExports = [], loading, deleteUserFile, stats } = useFirestore();
   const { toast } = useToast();
+  
+  const isFree = stats?.subscriptionTier === "Free";
 
   const handleDelete = async (fileId: string, storagePath: string) => {
     try {
@@ -115,6 +119,21 @@ export default function HistoryPage() {
         <p className="text-muted-foreground mt-1">View and manage your past document extractions.</p>
       </div>
 
+      {isFree && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="text-sm font-medium text-amber-600 dark:text-amber-400">7-Day Ephemerality Rule Active</h4>
+            <p className="text-sm text-amber-600/80 dark:text-amber-400/80 mt-1">
+              On the Free tier, your history, uploaded documents, and generated ledgers are permanently deleted after 7 days.
+            </p>
+            <Button variant="link" className="p-0 h-auto text-sm text-amber-600 dark:text-amber-400 font-semibold mt-2">
+              Upgrade to Pro for permanent ledger storage &rarr;
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <div className="relative w-full sm:w-80">
@@ -145,43 +164,46 @@ export default function HistoryPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[100px]">ID</TableHead>
-              <TableHead>Document Name</TableHead>
+              <TableHead>Export Name</TableHead>
               <TableHead>Template Used</TableHead>
-              <TableHead>Date Uploaded</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Date Generated</TableHead>
+              <TableHead>Files Extracted</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {history.length === 0 ? (
+            {processedExports.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center">
-                  No processing history found.
+                  No processing history found. Run an extraction to generate reports.
                 </TableCell>
               </TableRow>
             ) : (
-              history.map((item) => (
+              processedExports.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-mono text-xs text-muted-foreground">{item.id.slice(0, 8)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-primary" />
+                      <FileText className="h-4 w-4 text-emerald-500" />
                       <div className="flex flex-col">
-                        <span className="font-medium text-sm truncate max-w-[200px]" title={item.name}>{item.name}</span>
-                        <span className="text-xs text-muted-foreground">{(item.size / 1024 / 1024).toFixed(2)} MB • {item.type || "File"}</span>
+                        <span className="font-medium text-sm truncate max-w-[250px]" title={item.fileName}>{item.fileName}</span>
+                        <span className="text-xs text-muted-foreground">Excel Spreadsheet</span>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>Standard Extraction</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className="font-normal">{item.templateName}</Badge>
+                  </TableCell>
                   <TableCell>
                     {item.createdAt?.seconds 
                       ? formatDistanceToNow(new Date(item.createdAt.seconds * 1000), { addSuffix: true }) 
                       : "Just now"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                      Uploaded
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Files className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{item.fileCount} Invoice{item.fileCount !== 1 ? 's' : ''}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -192,12 +214,12 @@ export default function HistoryPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
-                          <a href={item.downloadURL} target="_blank" rel="noopener noreferrer" className="flex items-center cursor-pointer">
-                            <Download className="mr-2 h-4 w-4" /> Download
+                          <a href={item.downloadURL} target="_blank" rel="noopener noreferrer" className="flex items-center cursor-pointer font-medium text-emerald-600 focus:text-emerald-700">
+                            <Download className="mr-2 h-4 w-4" /> Download Ledger
                           </a>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(item.id, item.storagePath)}>
+                        <DropdownMenuItem className="text-destructive focus:bg-destructive focus:text-destructive-foreground" onClick={() => handleDelete(item.id, item.storagePath)}>
                           Delete Record
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -211,7 +233,7 @@ export default function HistoryPage() {
       </div>
       
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <div>Showing {history.length} items</div>
+        <div>Showing {processedExports.length} items</div>
       </div>
     </div>
   );

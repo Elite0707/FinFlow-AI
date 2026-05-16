@@ -12,7 +12,11 @@ import {
   MoreHorizontal,
   CheckCircle2,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Layers,
+  Zap,
+  Loader2,
+  Lock,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -27,8 +31,26 @@ import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
-  const { stats, usage, userFiles, loading } = useFirestore();
+  const { stats, usage, userFiles, templates, batchJobs, loading } = useFirestore();
   const recentUploads = userFiles ?? [];
+
+  // Compute real stats from batchJobs
+  const totalDocumentsProcessed = batchJobs.reduce((sum, job) => sum + (job.completedFiles || 0), 0);
+  const activeTemplatesCount = templates.filter(t => !t.isDraft).length;
+  const processingJobs = batchJobs.filter(j => j.status === "processing");
+  const completedJobs = batchJobs.filter(j => j.status === "completed");
+
+  // Compute real success rate from batch results
+  const allResults = batchJobs.flatMap(j => j.results || []);
+  const successCount = allResults.filter(r => r.status === "Success").length;
+  const successRate = allResults.length > 0
+    ? Math.round((successCount / allResults.length) * 100)
+    : 0;
+
+  // Free tier info — simple 10 invoices/month
+  const isFree = stats?.subscriptionTier === "Free";
+  const invoiceCount = usage?.monthlyUploadCount || 0;
+  const invoicesRemaining = Math.max(0, 10 - invoiceCount);
 
   if (loading) {
     return (
@@ -120,7 +142,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link href="/dashboard/upload">
-            <Button disabled={!stats || stats.creditsRemaining <= 0}>
+            <Button>
               <Upload className="mr-2 h-4 w-4" />
               Upload Document
             </Button>
@@ -136,72 +158,109 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="hover:border-primary/50 transition-colors">
+        {/* Total Documents Processed */}
+        <Card className={`relative overflow-hidden transition-colors ${isFree ? 'opacity-60' : 'hover:border-primary/50'}`}>
+          {isFree && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+              <Lock className="h-8 w-8 text-muted-foreground/50 mb-2" />
+              <Badge variant="outline" className="text-xs">Pro</Badge>
+            </div>
+          )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+            <CardTitle className="text-sm font-medium">Documents Processed</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalDocumentsProcessed || 0}</div>
+            <div className="text-2xl font-bold">{totalDocumentsProcessed}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              <span className="text-emerald-500 font-medium">Lifetime</span> processed
+              <span className="text-emerald-500 font-medium">
+                {completedJobs.length} batch{completedJobs.length !== 1 ? "es" : ""}
+              </span>{" "}
+              completed
             </p>
           </CardContent>
         </Card>
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Usage</CardTitle>
-            <div className="h-4 w-4 text-muted-foreground">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+
+        {/* Invoices This Month */}
+        <Card className={`relative overflow-hidden transition-colors ${isFree ? 'opacity-60' : 'hover:border-primary/50'}`}>
+          {isFree && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+              <Lock className="h-8 w-8 text-muted-foreground/50 mb-2" />
+              <Badge variant="outline" className="text-xs">Pro</Badge>
             </div>
+          )}
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Invoices This Month</CardTitle>
+            <Zap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{usage?.monthlyUploadCount || 0} <span className="text-sm font-normal text-muted-foreground">/ 10</span></div>
+            <div className="text-2xl font-bold">
+              {invoiceCount} <span className="text-sm font-normal text-muted-foreground">/ 10</span>
+            </div>
             <div className="w-full bg-secondary h-1.5 rounded-full mt-2">
               <div
-                className={`h-full rounded-full transition-all ${(usage?.monthlyUploadCount || 0) >= 10
-                  ? "bg-destructive"
-                  : (usage?.monthlyUploadCount || 0) >= 8
-                    ? "bg-yellow-500"
-                    : "bg-primary"
-                  }`}
-                style={{ width: `${Math.min(100, ((usage?.monthlyUploadCount || 0) / 10) * 100)}%` }}
-              ></div>
+                className={`h-full rounded-full transition-all ${invoiceCount >= 10 ? "bg-destructive" : invoiceCount >= 8 ? "bg-yellow-500" : "bg-primary"}`}
+                style={{ width: `${Math.min(100, (invoiceCount / 10) * 100)}%` }}
+              />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {stats?.subscriptionTier} Plan
+              {invoicesRemaining > 0 ? `${invoicesRemaining} remaining` : "Limit reached"} · Free Plan
             </p>
           </CardContent>
         </Card>
-        <Card className="hover:border-primary/50 transition-colors">
+
+        {/* Active Templates */}
+        <Card className={`relative overflow-hidden transition-colors ${isFree ? 'opacity-60' : 'hover:border-primary/50'}`}>
+          {isFree && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+              <Lock className="h-8 w-8 text-muted-foreground/50 mb-2" />
+              <Badge variant="outline" className="text-xs">Pro</Badge>
+            </div>
+          )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Templates</CardTitle>
-            <div className="h-4 w-4 text-muted-foreground">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>
-            </div>
+            <Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeTemplatesCount || 0}</div>
+            <div className="text-2xl font-bold">{activeTemplatesCount}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Ready to use
+              {templates.filter(t => t.isDraft).length > 0 && (
+                <span className="text-yellow-500 font-medium">
+                  +{templates.filter(t => t.isDraft).length} draft{templates.filter(t => t.isDraft).length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {templates.filter(t => t.isDraft).length === 0 && "Ready to use"}
             </p>
           </CardContent>
         </Card>
-        <Card className="hover:border-primary/50 transition-colors">
+
+        {/* Success Rate */}
+        <Card className={`relative overflow-hidden transition-colors ${isFree ? 'opacity-60' : 'hover:border-primary/50'}`}>
+          {isFree && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
+              <Lock className="h-8 w-8 text-muted-foreground/50 mb-2" />
+              <Badge variant="outline" className="text-xs">Pro</Badge>
+            </div>
+          )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">99.8%</div>
+            <div className="text-2xl font-bold">
+              {allResults.length > 0 ? `${successRate}%` : "—"}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              System Uptime
+              {allResults.length > 0
+                ? `${successCount} of ${allResults.length} files`
+                : "No extractions yet"
+              }
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Activity */}
+      {/* Recent Activity + Processing Queue */}
       <div className="grid md:grid-cols-7 gap-8">
         <Card className="md:col-span-4 lg:col-span-5">
           <CardHeader>
@@ -268,33 +327,94 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Live Processing Queue */}
         <Card className="md:col-span-3 lg:col-span-2">
           <CardHeader>
             <CardTitle>Processing Queue</CardTitle>
-            <CardDescription>Live status of your documents.</CardDescription>
+            <CardDescription>Live status of your batch jobs.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
-              <div className="text-sm text-muted-foreground text-center py-4">
-                Processing status will appear here once extraction is enabled.
-              </div>
+            <div className="space-y-4">
+              {batchJobs.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No batch jobs yet. Use a template to start processing.
+                </div>
+              ) : (
+                batchJobs.slice(0, 5).map((job) => {
+                  const progress = job.totalFiles > 0
+                    ? Math.round((job.completedFiles / job.totalFiles) * 100)
+                    : 0;
 
-              <div className="mt-8 p-4 rounded-lg bg-primary/5 border border-primary/10">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="text-sm font-medium text-primary">Tip: Use Templates</h4>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Save time by creating templates for recurring document layouts.
-                    </p>
-                    <Link href="/dashboard/templates/builder">
-                      <Button variant="link" className="text-primary p-0 h-auto text-xs mt-2">
-                        Create Template &rarr;
-                      </Button>
-                    </Link>
+                  return (
+                    <div key={job.id} className="p-3 rounded-lg bg-muted/40 border border-transparent hover:border-border transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium truncate max-w-[140px]">
+                          {job.templateName}
+                        </span>
+                        {job.status === "processing" ? (
+                          <Badge className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20 gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Processing
+                          </Badge>
+                        ) : job.status === "completed" ? (
+                          <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 gap-1">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Done
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            Failed
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ease-out ${
+                            job.status === "completed" ? "bg-emerald-500" :
+                            job.status === "failed" ? "bg-destructive" : "bg-primary"
+                          }`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-xs text-muted-foreground">
+                          {job.completedFiles} / {job.totalFiles} files
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {job.createdAt?.seconds
+                            ? formatDistanceToNow(new Date(job.createdAt.seconds * 1000), { addSuffix: true })
+                            : "Just now"
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Tip card */}
+              {batchJobs.length === 0 && (
+                <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/10">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-medium text-primary">Tip: Use Templates</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Save time by creating templates for recurring document layouts.
+                      </p>
+                      <Link href="/dashboard/templates/builder">
+                        <Button variant="link" className="text-primary p-0 h-auto text-xs mt-2">
+                          Create Template &rarr;
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, FileSpreadsheet, Copy, Trash, Edit, Share2 } from "lucide-react";
+import { Plus, MoreHorizontal, FileSpreadsheet, Copy, Trash, Edit, Share2, Download } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,11 +20,15 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { SelectDocumentsModal } from "@/components/SelectDocumentsModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
-import { processBatch } from "@/utils/batchProcessor";
+import { startBatchProcessing, generateExcelFromResults, generateExcelBuffer } from "@/utils/batchProcessor";
+import type { BatchJob } from "@/utils/batchProcessor";
 import { Skeleton } from "@/components/ui/skeleton";
+import { doc, onSnapshot } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 
 export default function TemplatesPage() {
-  const { templates, loading, deleteTemplate, saveTemplate, userFiles } = useFirestore(); // Fetch userFiles
+  const { templates, loading, deleteTemplate, saveTemplate, userFiles, usage, user, stats, saveProcessedExport } = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -32,13 +36,28 @@ export default function TemplatesPage() {
   const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // New state for selection modal
+  // State for selection modal
   const [selectModalOpen, setSelectModalOpen] = useState(false);
   const [selectedTemplateForUse, setSelectedTemplateForUse] = useState<any>(null);
+
+  // State for batch progress tracking
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+
+  // Clean up Firestore listener on unmount
+  useEffect(() => {
+    return () => {
+      if (unsubRef.current) unsubRef.current();
+    };
+  }, []);
 
   const handleEdit = (id: string) => {
     router.push(`/dashboard/templates/builder?id=${id}`);
   };
+
+  // Free tier: batch processing is completely locked
+  const isFree = stats?.subscriptionTier === "Free";
 
   const handleUseTemplate = (template: any) => {
     setSelectedTemplateForUse(template);
@@ -46,7 +65,17 @@ export default function TemplatesPage() {
   };
 
   const handleProceedWithFiles = async (fileIds: string[]) => {
-    if (!selectedTemplateForUse) return;
+    if (!selectedTemplateForUse || !user) return;
+
+    // Free tier: only 1 file at a time (individual extraction)
+    if (isFree && fileIds.length > 1) {
+      toast({
+        title: "Free Tier Limit",
+        description: "Select only 1 file at a time. Upgrade to Pro for batch processing.",
+        variant: "destructive"
+      });
+      return;
+    }
 
     // Filter userFiles to get the full file objects for the selected IDs
     const filesToProcess = userFiles
@@ -64,27 +93,92 @@ export default function TemplatesPage() {
 
     setSelectModalOpen(false);
 
-    toast({
-      title: "Batch Processing Started",
-      description: `Analyzing ${filesToProcess.length} file${filesToProcess.length > 1 ? 's' : ''} with "${selectedTemplateForUse.name}"...`,
-    });
-
     try {
-      await processBatch(
+      // Send to Inngest background queue (returns instantly)
+      const { batchJobId, totalFiles } = await startBatchProcessing(
         filesToProcess,
         {
           name: selectedTemplateForUse.name,
           extractionFields: selectedTemplateForUse.extractionFields || []
         },
-        (current, total, message) => {
-          console.log(`Progress: ${current}/${total} - ${message}`);
-        }
+        user.uid
       );
 
+      setActiveBatchId(batchJobId);
+      setBatchProgress({ completed: 0, total: totalFiles });
+
+
       toast({
-        title: "Batch Complete",
-        description: "Excel report has been generated and downloaded.",
-        className: "bg-green-500 text-white"
+        title: "🚀 Processing in Background",
+        description: `${totalFiles} file${totalFiles > 1 ? 's' : ''} queued. You can navigate away — we'll notify you when done.`,
+      });
+
+      // Listen to Firestore for real-time progress updates
+      if (unsubRef.current) unsubRef.current(); // Clean up any previous listener
+
+      const batchDocRef = doc(db, "users", user.uid, "batchJobs", batchJobId);
+      unsubRef.current = onSnapshot(batchDocRef, (snapshot) => {
+        const data = snapshot.data() as BatchJob | undefined;
+        if (!data) return;
+
+        setBatchProgress({ completed: data.completedFiles, total: data.totalFiles });
+
+        if (data.status === "completed") {
+          // Batch finished — generate Excel
+          toast({
+            title: "✅ Batch Complete!",
+            description: `All ${data.totalFiles} files processed. Generating Excel...`,
+            className: "bg-green-500 text-white"
+          });
+
+          generateExcelFromResults(
+            data.results,
+            {
+              name: selectedTemplateForUse.name,
+              extractionFields: selectedTemplateForUse.extractionFields || []
+            }
+          ).then(async ({ buffer, fileName }) => {
+            toast({
+              title: "📊 Excel Downloaded",
+              description: "Your ledger report has been generated.",
+              className: "bg-green-500 text-white"
+            });
+
+            // Upload the generated Excel to Firebase Storage
+            try {
+              if (user) {
+                const timestamp = Date.now();
+                const storagePath = `user_exports/${user.uid}/${timestamp}_${fileName}`;
+                const fileRef = ref(storage, storagePath);
+                
+                await uploadBytes(fileRef, buffer, {
+                  contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                });
+                
+                const downloadURL = await getDownloadURL(fileRef);
+                
+                // Save reference to Firestore History
+                await saveProcessedExport(
+                  fileName,
+                  selectedTemplateForUse.name,
+                  downloadURL,
+                  storagePath,
+                  data.totalFiles
+                );
+              }
+            } catch (err) {
+              console.error("[Templates] Failed to save export to History:", err);
+            }
+          });
+
+          // Clean up
+          setActiveBatchId(null);
+          setBatchProgress(null);
+          if (unsubRef.current) {
+            unsubRef.current();
+            unsubRef.current = null;
+          }
+        }
       });
 
     } catch (e) {
@@ -200,6 +294,31 @@ export default function TemplatesPage() {
         </Link>
       </div>
 
+      {/* Batch Progress Banner */}
+      {batchProgress && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-sm font-medium">
+                  Processing: {batchProgress.completed} / {batchProgress.total} files
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {Math.round((batchProgress.completed / batchProgress.total) * 100)}%
+              </span>
+            </div>
+            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${(batchProgress.completed / batchProgress.total) * 100}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Create New Card */}
         <Link href="/dashboard/templates/builder">
@@ -294,6 +413,7 @@ export default function TemplatesPage() {
           onProceed={handleProceedWithFiles}
           files={userFiles}
           templateName={selectedTemplateForUse.name}
+          isFree={isFree}
         />
       )}
     </div>

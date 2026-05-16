@@ -21,13 +21,41 @@ import { auth, db, storage } from "@/lib/firebase";
 
 export interface UserStats {
   totalDocumentsProcessed: number;
-  creditsRemaining: number;
-  subscriptionTier: "Free" | "Individual" | "Business" | "Pro";
+  creditsRemaining?: number; // Only for paid tiers (Starter, Business, Pro)
+  subscriptionTier: "Free" | "Starter" | "Business" | "Pro";
   activeTemplatesCount: number;
 }
 
 export interface UserUsage {
   monthlyUploadCount: number;
+}
+
+// Free tier limits
+export const FREE_TIER_LIMITS = {
+  maxInvoicesPerMonth: 10,
+  maxTemplates: 1,
+  storageRetentionDays: 7,
+};
+
+export interface BatchJobDoc {
+  id: string;
+  templateName: string;
+  templateFields: string[];
+  totalFiles: number;
+  completedFiles: number;
+  status: "processing" | "completed" | "failed";
+  results: Array<{ fileName: string; status: string; fields: Record<string, string> }>;
+  createdAt: any;
+}
+
+export interface ProcessedExport {
+  id: string;
+  fileName: string;
+  templateName: string;
+  downloadURL: string;
+  storagePath: string;
+  fileCount: number;
+  createdAt: any;
 }
 
 export interface UserFile {
@@ -67,6 +95,8 @@ export function useFirestore() {
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [batchJobs, setBatchJobs] = useState<BatchJobDoc[]>([]);
+  const [processedExports, setProcessedExports] = useState<ProcessedExport[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -111,12 +141,13 @@ export function useFirestore() {
           if (docSnap.exists()) {
             setStats(docSnap.data() as UserStats);
           } else {
-            // Create default stats
+            // Create default stats — Free tier has no credits
             const defaultStats: UserStats = {
               totalDocumentsProcessed: 0,
-              creditsRemaining: 100, // Default start credits
               subscriptionTier: "Free",
               activeTemplatesCount: 0,
+              // creditsRemaining is omitted for Free tier
+              // Paid tiers (Starter/Business/Pro) will set this on upgrade
             };
             setDoc(statsRef, defaultStats);
             setStats(defaultStats);
@@ -199,12 +230,48 @@ export function useFirestore() {
         (err) => handlePermissionDenied("subscriptions", err)
       );
 
+      // Listen to batchJobs for dashboard queue
+      const batchJobsQuery = query(
+        collection(db, `users/${currentUser.uid}/batchJobs`),
+        orderBy("createdAt", "desc"),
+        limit(20)
+      );
+
+      const unsubscribeBatchJobs = onSnapshot(
+        batchJobsQuery,
+        (snapshot) => {
+          const items = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as BatchJobDoc[];
+          setBatchJobs(items);
+        },
+        (err) => handlePermissionDenied("batchJobs", err)
+      );
+
+      // Listen to processed exports
+      const exportsRef = collection(db, `users/${currentUser.uid}/processedExports`);
+      const exportsQuery = query(exportsRef, orderBy("createdAt", "desc"));
+      const unsubscribeExports = onSnapshot(
+        exportsQuery,
+        (snapshot) => {
+          const exportList = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as ProcessedExport[];
+          setProcessedExports(exportList);
+        },
+        (err) => handlePermissionDenied("processedExports", err)
+      );
+
       return () => {
         unsubscribeStats();
         unsubscribeUsage();
         unsubscribeFiles();
         unsubscribeTemplates();
         unsubscribeSubscriptions();
+        unsubscribeBatchJobs();
+        unsubscribeExports();
       };
     });
 
@@ -367,6 +434,59 @@ export function useFirestore() {
     return null;
   }, [user]);
 
+  // Cleanup: delete files older than 7 days for free tier
+  const cleanupExpiredFiles = useCallback(async () => {
+    if (!user || stats?.subscriptionTier !== "Free") return;
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - FREE_TIER_LIMITS.storageRetentionDays);
+
+    const expiredFiles = userFiles.filter(f => {
+      if (!f.createdAt?.seconds) return false;
+      return new Date(f.createdAt.seconds * 1000) < cutoff;
+    });
+
+    for (const file of expiredFiles) {
+      try {
+        await deleteUserFile(file.id, file.storagePath);
+        console.log(`[Cleanup] Deleted expired file: ${file.name}`);
+      } catch (err) {
+        console.warn(`[Cleanup] Failed to delete ${file.name}:`, err);
+      }
+    }
+
+    if (expiredFiles.length > 0) {
+      console.log(`[Cleanup] Removed ${expiredFiles.length} expired file(s)`);
+    }
+  }, [user, stats, userFiles, deleteUserFile]);
+
+  // Run cleanup on mount when data is ready
+  useEffect(() => {
+    if (!loading && user && stats?.subscriptionTier === "Free" && userFiles.length > 0) {
+      cleanupExpiredFiles();
+    }
+  }, [loading, user, stats, userFiles.length, cleanupExpiredFiles]);
+
+  // Save processed export reference
+  const saveProcessedExport = async (
+    fileName: string,
+    templateName: string,
+    downloadURL: string,
+    storagePath: string,
+    fileCount: number
+  ) => {
+    if (!user) return;
+    const exportsRef = collection(db, `users/${user.uid}/processedExports`);
+    await addDoc(exportsRef, {
+      fileName,
+      templateName,
+      downloadURL,
+      storagePath,
+      fileCount,
+      createdAt: serverTimestamp(),
+    });
+  };
+
   return {
     user,
     stats,
@@ -374,12 +494,16 @@ export function useFirestore() {
     userFiles,
     templates,
     subscriptions,
+    batchJobs,
+    processedExports,
     loading,
     uploadFile,
     deleteUserFile,
     saveTemplate,
     updateTemplate,
     deleteTemplate,
-    getTemplate
+    getTemplate,
+    cleanupExpiredFiles,
+    saveProcessedExport,
   };
 }

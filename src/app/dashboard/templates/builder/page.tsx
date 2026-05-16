@@ -17,7 +17,7 @@ function TemplateBuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const templateId = searchParams.get("id");
-  const { saveTemplate, updateTemplate, getTemplate, uploadFile, user, stats } = useFirestore();
+  const { saveTemplate, updateTemplate, getTemplate, uploadFile, user, stats, usage, templates } = useFirestore();
   const { toast } = useToast();
   const [templateName, setTemplateName] = useState("New Template");
   const [documentType, setDocumentType] = useState("Invoice");
@@ -110,6 +110,19 @@ function TemplateBuilderContent() {
       return;
     }
 
+    // Free tier gate: max 10 invoices/month
+    const isFree = stats?.subscriptionTier === "Free";
+    const invoiceCount = usage?.monthlyUploadCount || 0;
+
+    if (isFree && invoiceCount >= 10) {
+      toast({
+        title: "Monthly Limit Reached",
+        description: "You've used all 10 free extractions this month. Upgrade to Pro for unlimited.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
       const formData = new FormData();
@@ -148,8 +161,14 @@ function TemplateBuilderContent() {
       return;
     }
 
-    if (!isDraft && (!stats || stats.creditsRemaining <= 0)) {
-      toast({ title: "Insufficient Credits", description: "Cannot save active templates with 0 credits.", variant: "destructive" });
+    // Free tier: 1 template limit
+    const isFree = stats?.subscriptionTier === "Free";
+    if (isFree && !isDraft && !templateId && templates.filter(t => !t.isDraft).length >= 1) {
+      toast({
+        title: "Template Limit Reached",
+        description: "Free tier allows 1 active template. Upgrade to Pro for unlimited templates.",
+        variant: "destructive"
+      });
       return;
     }
 
@@ -225,7 +244,7 @@ function TemplateBuilderContent() {
           </Button>
           <Button
             onClick={() => handleSave(false)}
-            disabled={(!stats || stats.creditsRemaining <= 0) || isSaving}
+            disabled={isSaving}
           >
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Template

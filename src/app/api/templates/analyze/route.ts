@@ -1,5 +1,26 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { PDFDocument } from "pdf-lib";
+
+/**
+ * Extracts only the first page from a PDF buffer.
+ * For free tier: single-page extraction to limit API cost and processing.
+ */
+async function extractFirstPage(arrayBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+    const srcDoc = await PDFDocument.load(arrayBuffer);
+    const pageCount = srcDoc.getPageCount();
+
+    // If already 1 page, return as-is
+    if (pageCount <= 1) return arrayBuffer;
+
+    // Create a new PDF with only the first page
+    const newDoc = await PDFDocument.create();
+    const [firstPage] = await newDoc.copyPages(srcDoc, [0]);
+    newDoc.addPage(firstPage);
+
+    const pdfBytes = await newDoc.save();
+    return pdfBytes.buffer as ArrayBuffer;
+}
 
 export async function POST(req: Request) {
     try {
@@ -20,8 +41,7 @@ export async function POST(req: Request) {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        const arrayBuffer = await file.arrayBuffer();
-        const base64Data = Buffer.from(arrayBuffer).toString("base64");
+        let arrayBuffer = await file.arrayBuffer();
 
         // Determine MIME type with fallback — blobs from Firebase can arrive with empty type
         const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
@@ -33,6 +53,21 @@ export async function POST(req: Request) {
             'webp': 'image/webp',
         };
         const mimeType = file.type || extMimeMap[fileExt] || 'application/pdf';
+
+        // FREE TIER: Single-page extraction — truncate PDF to first page only
+        // This reduces Gemini token usage and enforces the free tier limit.
+        // For images (jpg/png/webp), single-page is inherent — no truncation needed.
+        if (mimeType === 'application/pdf') {
+            try {
+                arrayBuffer = await extractFirstPage(arrayBuffer) as ArrayBuffer;
+                console.log("[Analyze] PDF truncated to first page for extraction.");
+            } catch (pdfErr) {
+                console.warn("[Analyze] Could not truncate PDF, sending full document:", pdfErr);
+                // Fall through — send full PDF if truncation fails (e.g., encrypted PDF)
+            }
+        }
+
+        const base64Data = Buffer.from(arrayBuffer).toString("base64");
 
         // 2. DYNAMIC PROMPT: Inject the user's exact fields or auto-detect
         const prompt = userFields.length > 0
