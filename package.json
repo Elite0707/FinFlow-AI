@@ -53,6 +53,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/uuid": "^10.0.0",
+    "netlify-plugin-inngest": "^0.3.0",
     "postcss": "^8",
     "tailwind-merge": "^2",
     "tailwindcss": "^3",
