@@ -35,22 +35,22 @@ import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HistoryPage() {
-  const { processedExports = [], loading, deleteUserFile, stats } = useFirestore();
+  const { processedExports = [], loading, deleteProcessedExport, stats } = useFirestore();
   const { toast } = useToast();
   
   const isFree = stats?.subscriptionTier === "Free";
 
-  const handleDelete = async (fileId: string, storagePath: string) => {
+  const handleDelete = async (exportId: string, storagePath: string) => {
     try {
-      await deleteUserFile(fileId, storagePath);
+      await deleteProcessedExport(exportId, storagePath);
       toast({
-        title: "File Deleted",
-        description: "The file has been permanently deleted.",
+        title: "Record Deleted",
+        description: "The processing record and ledger have been permanently deleted.",
       });
     } catch (error) {
       toast({
         title: "Delete Failed",
-        description: "Could not delete the file.",
+        description: "Could not delete the record.",
         variant: "destructive"
       });
     }
@@ -183,13 +183,13 @@ export default function HistoryPage() {
                 <TableRow key={item.id}>
                   <TableCell className="font-mono text-xs text-muted-foreground">{item.id.slice(0, 8)}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-emerald-500" />
+                    <a href={item.downloadURL} download={item.fileName} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 group hover:underline decoration-emerald-500/50">
+                      <FileText className="h-4 w-4 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
                       <div className="flex flex-col">
-                        <span className="font-medium text-sm truncate max-w-[250px]" title={item.fileName}>{item.fileName}</span>
+                        <span className="font-medium text-sm truncate max-w-[250px] text-foreground" title={item.fileName}>{item.fileName}</span>
                         <span className="text-xs text-muted-foreground">Excel Spreadsheet</span>
                       </div>
-                    </div>
+                    </a>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="font-normal">{item.templateName}</Badge>
@@ -206,24 +206,31 @@ export default function HistoryPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <a href={item.downloadURL} target="_blank" rel="noopener noreferrer" className="flex items-center cursor-pointer font-medium text-emerald-600 focus:text-emerald-700">
-                            <Download className="mr-2 h-4 w-4" /> Download Ledger
-                          </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive focus:bg-destructive focus:text-destructive-foreground" onClick={() => handleDelete(item.id, item.storagePath)}>
-                          Delete Record
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" asChild>
+                        <a href={item.downloadURL} download={item.fileName} target="_blank" rel="noopener noreferrer" title="Download Ledger">
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <a href={item.downloadURL} download={item.fileName} target="_blank" rel="noopener noreferrer" className="flex items-center cursor-pointer font-medium text-emerald-600 focus:text-emerald-700">
+                              <Download className="mr-2 h-4 w-4" /> Download Ledger
+                            </a>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive focus:bg-destructive focus:text-destructive-foreground" onClick={() => handleDelete(item.id, item.storagePath)}>
+                            Delete Record
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

@@ -2,6 +2,8 @@ import { inngest } from "./client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getAdminDb, getAdminStorage } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+import ExcelJS from "exceljs";
+import crypto from "crypto";
 
 // --- MIME type helper ---
 const MIME_MAP: Record<string, string> = {
@@ -104,7 +106,141 @@ async function performExtraction(
     const updatedDoc = await batchJobRef.get();
     const data = updatedDoc.data();
     if (data && data.completedFiles >= data.totalFiles) {
-      await batchJobRef.update({ status: "completed" });
+      // 1. Generate Excel workbook
+      const workbook = new ExcelJS.Workbook();
+      const results = data.results || [];
+      const templateFields = data.templateFields || [];
+      const templateName = data.templateName || "Template";
+
+      // Group the data by vendor/party name
+      const groupKey = templateFields.find((f: string) =>
+        /vendor|company|party|name|customer|client|buyer/i.test(f)
+      );
+
+      const groupedData: Record<string, any[]> = {};
+      results.forEach((row: any) => {
+        if (row.status !== "Success") return;
+
+        let companyName = "";
+        if (groupKey) {
+          const fields = row.fields || {};
+          if (fields[groupKey] && fields[groupKey] !== "" && fields[groupKey] !== "Not Found") {
+            companyName = fields[groupKey];
+          } else {
+            const matchingKey = Object.keys(fields).find(
+              (k) => k.toLowerCase() === groupKey.toLowerCase()
+            );
+            if (matchingKey && fields[matchingKey] && fields[matchingKey] !== "" && fields[matchingKey] !== "Not Found") {
+              companyName = fields[matchingKey];
+            }
+          }
+        }
+
+        if (!companyName) {
+          companyName = row.fileName
+            ? row.fileName.replace(/\.[^/.]+$/, "")
+            : "Uncategorized";
+        }
+
+        if (!groupedData[companyName]) groupedData[companyName] = [];
+        groupedData[companyName].push(row);
+      });
+
+      const companyNames = Object.keys(groupedData);
+
+      const indexSheet = workbook.addWorksheet("Index");
+      indexSheet.addRow(["", "INDEX", ""]);
+      indexSheet.addRow(["SR NO", "NAME", "PAGE NO"]);
+      indexSheet.getRow(1).font = { bold: true, size: 14 };
+      indexSheet.getRow(2).font = { bold: true };
+      indexSheet.columns = [
+        { width: 10 }, { width: 45 }, { width: 15 }
+      ];
+
+      companyNames.forEach((company, index) => {
+        const pageNo = (index + 1).toString();
+
+        const iRow = indexSheet.addRow([pageNo, company, pageNo]);
+        iRow.getCell(3).value = { text: pageNo, hyperlink: `#'${pageNo}'!A1` } as any;
+        iRow.getCell(3).font = { color: { argb: "0563C1" }, underline: true };
+
+        const sheet = workbook.addWorksheet(pageNo);
+        const colWidths = templateFields.map((f: string) => ({
+          width: Math.max(15, Math.min(40, f.length * 1.5 + 5))
+        }));
+        sheet.columns = colWidths;
+
+        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, templateFields.length - 2)).fill("")]);
+        sheet.addRow(Array(templateFields.length).fill(""));
+
+        const headerRow = sheet.addRow(templateFields);
+        headerRow.font = { bold: true };
+        headerRow.eachCell((cell) => {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFE2EFDA" }
+          };
+          cell.border = {
+            bottom: { style: "thin", color: { argb: "FF999999" } }
+          };
+        });
+        sheet.getRow(1).font = { bold: true };
+
+        groupedData[company].forEach((dataRow) => {
+          const rowValues = templateFields.map((field: string) => {
+            const fields = dataRow.fields || {};
+            if (fields[field] !== undefined) return fields[field];
+            const key = Object.keys(fields).find((k) => k.toLowerCase() === field.toLowerCase());
+            return key ? fields[key] : "";
+          });
+          sheet.addRow(rowValues);
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const outputFileName = `${templateName.replace(/\s+/g, "_")}_Ledger_${dateStr}.xlsx`;
+
+      // 2. Upload to Firebase Storage using Admin SDK
+      const exportTimestamp = Date.now();
+      const storagePath = `user_exports/${userId}/${exportTimestamp}_${outputFileName}`;
+      const bucket = getAdminStorage().bucket();
+      const fileRef = bucket.file(storagePath);
+
+      const downloadToken = crypto.randomUUID();
+      await fileRef.save(Buffer.from(buffer), {
+        metadata: {
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          contentDisposition: `attachment; filename="${outputFileName}"`,
+          metadata: {
+            firebaseStorageDownloadTokens: downloadToken
+          }
+        }
+      });
+
+      const downloadURL = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+      // 3. Save reference to processedExports Firestore collection
+      await getAdminDb()
+        .collection("users")
+        .doc(userId)
+        .collection("processedExports")
+        .add({
+          fileName: outputFileName,
+          templateName,
+          downloadURL,
+          storagePath,
+          fileCount: data.totalFiles,
+          createdAt: FieldValue.serverTimestamp()
+        });
+
+      // 4. Update batchJob document
+      await batchJobRef.update({
+        status: "completed",
+        downloadURL,
+        fileName: outputFileName
+      });
     }
   });
 

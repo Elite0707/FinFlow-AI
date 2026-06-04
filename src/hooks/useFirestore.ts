@@ -487,6 +487,20 @@ export function useFirestore() {
     });
   };
 
+  // Delete processed export reference
+  const deleteProcessedExport = async (exportId: string, storagePath: string) => {
+    if (!user) return;
+    try {
+      const fileRef = ref(storage, storagePath);
+      await deleteObject(fileRef);
+    } catch (err) {
+      console.warn("[Firestore] Failed to delete export file from Storage:", err);
+    }
+
+    const docRef = doc(db, `users/${user.uid}/processedExports/${exportId}`);
+    await deleteDoc(docRef);
+  };
+
   return {
     user,
     stats,
@@ -505,5 +519,6 @@ export function useFirestore() {
     getTemplate,
     cleanupExpiredFiles,
     saveProcessedExport,
+    deleteProcessedExport,
   };
 }

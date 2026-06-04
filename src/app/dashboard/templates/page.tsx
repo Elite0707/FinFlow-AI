@@ -20,15 +20,14 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { SelectDocumentsModal } from "@/components/SelectDocumentsModal";
 import { DeleteConfirmationModal } from "@/components/DeleteConfirmationModal";
-import { startBatchProcessing, generateExcelFromResults, generateExcelBuffer } from "@/utils/batchProcessor";
+import { startBatchProcessing } from "@/utils/batchProcessor";
 import type { BatchJob } from "@/utils/batchProcessor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { doc, onSnapshot } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 
 export default function TemplatesPage() {
-  const { templates, loading, deleteTemplate, saveTemplate, userFiles, usage, user, stats, saveProcessedExport } = useFirestore();
+  const { templates, loading, deleteTemplate, saveTemplate, userFiles, usage, user, stats } = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -118,58 +117,28 @@ export default function TemplatesPage() {
 
       const batchDocRef = doc(db, "users", user.uid, "batchJobs", batchJobId);
       unsubRef.current = onSnapshot(batchDocRef, (snapshot) => {
-        const data = snapshot.data() as BatchJob | undefined;
+        const data = snapshot.data() as any;
         if (!data) return;
 
         setBatchProgress({ completed: data.completedFiles, total: data.totalFiles });
 
-        if (data.status === "completed") {
-          // Batch finished — generate Excel
+        if (data.status === "completed" && data.downloadURL) {
           toast({
             title: "✅ Batch Complete!",
-            description: `All ${data.totalFiles} files processed. Generating Excel...`,
+            description: `All ${data.totalFiles} files processed. Download starting...`,
             className: "bg-green-500 text-white"
           });
 
-          generateExcelFromResults(
-            data.results,
-            {
-              name: selectedTemplateForUse.name,
-              extractionFields: selectedTemplateForUse.extractionFields || []
+          // Trigger download using a hidden iframe to bypass popup blocker and CORS restrictions
+          const iframe = document.createElement("iframe");
+          iframe.style.display = "none";
+          iframe.src = data.downloadURL;
+          document.body.appendChild(iframe);
+          setTimeout(() => {
+            if (document.body.contains(iframe)) {
+              document.body.removeChild(iframe);
             }
-          ).then(async ({ buffer, fileName }) => {
-            toast({
-              title: "📊 Excel Downloaded",
-              description: "Your ledger report has been generated.",
-              className: "bg-green-500 text-white"
-            });
-
-            // Upload the generated Excel to Firebase Storage
-            try {
-              if (user) {
-                const timestamp = Date.now();
-                const storagePath = `user_exports/${user.uid}/${timestamp}_${fileName}`;
-                const fileRef = ref(storage, storagePath);
-                
-                await uploadBytes(fileRef, buffer, {
-                  contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                });
-                
-                const downloadURL = await getDownloadURL(fileRef);
-                
-                // Save reference to Firestore History
-                await saveProcessedExport(
-                  fileName,
-                  selectedTemplateForUse.name,
-                  downloadURL,
-                  storagePath,
-                  data.totalFiles
-                );
-              }
-            } catch (err) {
-              console.error("[Templates] Failed to save export to History:", err);
-            }
-          });
+          }, 10000);
 
           // Clean up
           setActiveBatchId(null);
