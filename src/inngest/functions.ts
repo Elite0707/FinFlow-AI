@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { adminDb, adminStorage } from "@/lib/firebaseAdmin";
+import { getAdminDb, getAdminStorage } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
 // --- MIME type helper ---
@@ -84,7 +84,7 @@ async function performExtraction(
 
   // STEP 2: Durable Save Point — Save results to Firestore
   await step.run("save-results-to-firestore", async () => {
-    const batchJobRef = adminDb
+    const batchJobRef = getAdminDb()
       .collection("users")
       .doc(userId)
       .collection("batchJobs")
@@ -136,7 +136,7 @@ export const processFileFree = inngest.createFunction(
 export const processFilePro = inngest.createFunction(
   {
     id: "finflow-process-file-pro",
-    concurrency: { limit: 15 }, // Process 15 in parallel
+    concurrency: { limit: 5 }, // Process 5 in parallel (Inngest plan limit)
     retries: 3,
     triggers: { event: "finflow/file.process.pro" },
   },
@@ -159,17 +159,17 @@ export const cleanupFreeTierData = inngest.createFunction(
     triggers: [{ cron: "0 0 * * *" }], // Run at midnight every day
   },
   async ({ step }) => {
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminStorage().bucket();
 
     // 1. Get all Free users
     const freeUsers = await step.run("fetch-free-users", async () => {
-      const statsSnapshot = await adminDb
+      const statsSnapshot = await getAdminDb()
         .collectionGroup("stats")
         .where("subscriptionTier", "==", "Free")
         .get();
 
       // The path is users/{uid}/stats/stats (or similar). We need the uid.
-      return statsSnapshot.docs.map(doc => {
+      return statsSnapshot.docs.map((doc: any) => {
         // Document path is usually users/{userId}/stats/{docId} OR users/{userId} (if stats is flat)
         // In this app, useFirestore.ts uses: doc(db, "users", user.uid, "stats", "default")
         return doc.ref.parent.parent?.id; 
@@ -184,7 +184,7 @@ export const cleanupFreeTierData = inngest.createFunction(
       await step.run(`cleanup-user-${uid}`, async () => {
         
         // A. Delete old processed exports (Excel files)
-        const exportsSnapshot = await adminDb
+        const exportsSnapshot = await getAdminDb()
           .collection(`users/${uid}/processedExports`)
           .where("createdAt", "<=", cutoffDate)
           .get();
@@ -198,7 +198,7 @@ export const cleanupFreeTierData = inngest.createFunction(
         }
 
         // B. Delete old user files (Uploaded PDFs)
-        const filesSnapshot = await adminDb
+        const filesSnapshot = await getAdminDb()
           .collection(`users/${uid}/files`)
           .where("createdAt", "<=", cutoffDate)
           .get();
@@ -212,7 +212,7 @@ export const cleanupFreeTierData = inngest.createFunction(
         }
 
         // C. Delete old batch jobs (Raw JSON Results)
-        const jobsSnapshot = await adminDb
+        const jobsSnapshot = await getAdminDb()
           .collection(`users/${uid}/batchJobs`)
           .where("createdAt", "<=", cutoffDate)
           .get();

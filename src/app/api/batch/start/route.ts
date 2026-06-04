@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { inngest } from "@/inngest/client";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { getAdminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
 // POST /api/batch/start
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Fetch user tier to route to correct queue (Velocity Paywall)
-    const statsDoc = await adminDb
+    const statsDoc = await getAdminDb()
       .collection("users")
       .doc(userId)
       .collection("stats")
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       : "finflow/file.process.pro";
 
     // 2. Create a batchJob document in Firestore for progress tracking
-    const batchJobRef = adminDb
+    const batchJobRef = getAdminDb()
       .collection("users")
       .doc(userId)
       .collection("batchJobs")

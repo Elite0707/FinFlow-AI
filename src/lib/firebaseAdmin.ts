@@ -14,10 +14,17 @@ function formatPrivateKey(key: string): string {
   return formatted;
 }
 
+let adminApp: App | null = null;
+let adminDb: any = null;
+let adminStorage: any = null;
+
 function getAdminApp(): App {
+  if (adminApp) return adminApp;
+
   const existingApps = getApps();
   if (existingApps.length > 0) {
-    return existingApps[0];
+    adminApp = existingApps[0];
+    return adminApp;
   }
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -39,12 +46,24 @@ function getAdminApp(): App {
 
   const privateKey = formatPrivateKey(rawPrivateKey);
 
-  return initializeApp({
+  adminApp = initializeApp({
     credential: cert({ projectId, clientEmail, privateKey }),
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   });
+  return adminApp;
 }
 
-const adminApp = getAdminApp();
-export const adminDb = getFirestore(adminApp);
-export const adminStorage = getStorage(adminApp);
+export function getAdminDb() {
+  if (!adminDb) {
+    adminDb = getFirestore(getAdminApp());
+  }
+  return adminDb;
+}
+
+export function getAdminStorage() {
+  if (!adminStorage) {
+    adminStorage = getStorage(getAdminApp());
+  }
+  return adminStorage;
+}
+
