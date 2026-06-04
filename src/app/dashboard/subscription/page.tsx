@@ -113,8 +113,9 @@ export default function SubscriptionPage() {
   const planDetails = PRICING_PLANS.find(p => p.id === currentPlanId) || PRICING_PLANS[0];
 
   // Calculate usage percentage
-  const usagePercentage = stats ? Math.min(100, ((1000 - stats.creditsRemaining) / 1000) * 100) : 0;
-  const creditsUsed = stats ? 1000 - stats.creditsRemaining : 0;
+  const creditsRemaining = stats?.creditsRemaining ?? 1000;
+  const usagePercentage = stats ? Math.min(100, ((1000 - creditsRemaining) / 1000) * 100) : 0;
+  const creditsUsed = stats ? 1000 - creditsRemaining : 0;
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
