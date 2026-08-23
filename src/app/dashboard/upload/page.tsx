@@ -55,7 +55,7 @@ export default function UploadPage() {
   const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB Limit
 
   // userFiles comes from our updated hook
-  const { uploadFile, userFiles, deleteUserFile, loading, usage } = useFirestore();
+  const { uploadFile, userFiles, deleteUserFile, loading, usage, stats } = useFirestore();
   const { toast } = useToast();
 
   const monthlyUploadCount = usage?.monthlyUploadCount || 0;
@@ -100,18 +100,19 @@ export default function UploadPage() {
 
     if (potentiallyValidFiles.length === 0) return;
 
-    // Check PDF Page Counts
-    const MAX_PAGES_FREE = 3;
+    // Check PDF Page Counts (Free tier limit: 1 page per document)
+    const isFreeTier = stats?.subscriptionTier === "Free";
+    const MAX_PAGES_ALLOWED = isFreeTier ? 1 : 100;
     const finalFiles: File[] = [];
 
     for (const file of potentiallyValidFiles) {
       if (file.type === 'application/pdf') {
         try {
           const pageCount = await countPdfPages(file);
-          if (pageCount > MAX_PAGES_FREE) {
+          if (pageCount > MAX_PAGES_ALLOWED) {
             toast({
               title: "Page Limit Exceeded",
-              description: `${file.name} has ${pageCount} pages. Free plan is limited to ${MAX_PAGES_FREE} pages per PDF.`,
+              description: `${file.name} has ${pageCount} page(s). ${isFreeTier ? "Free plan is limited to 1 page per document." : "Document exceeds page limit."}`,
               variant: "destructive"
             });
             continue; // Skip this file

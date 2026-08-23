@@ -55,10 +55,14 @@ async function performExtraction(
 
         ### EXTRACTION RULES
         1. **Context Awareness**: Identify the 'Vendor' (who issued the bill) vs 'Customer' (who pays the bill).
-        - Customer Name (the recipient of the goods/services, often listed under 'Bill To' or 'Buyer')  
-        2. **No Hallucinations**: If a field is not explicitly printed on the document, return "". Do not guess.
-        3. **Format**: Clean all currency symbols (e.g., "$", "₹") and return only the numeric value for totals.
-        4. **Dates**: Standardize all dates to YYYY-MM-DD.
+           - Vendor Name = the company at the TOP of the invoice (the seller/issuer).
+           - Customer Name = the recipient, found under 'Bill To', 'To', 'M/S', 'Buyer', or 'Ship To'.
+        2. **GSTIN Rule**: When "GSTIN" is requested, extract the **CUSTOMER's (buyer's) GSTIN**, 
+           NOT the vendor's GSTIN. The customer GSTIN is typically found near the "Bill To" / 
+           "Ship To" section. The vendor GSTIN at the top of the invoice belongs to the seller — ignore it for this field.
+        3. **No Hallucinations**: If a field is not explicitly printed on the document, return "". Do not guess.
+        4. **Format**: Clean all currency symbols (e.g., "$", "₹") and return only the numeric value for totals.
+        5. **Dates**: Standardize all dates to YYYY-MM-DD.
 
         ### OUTPUT
         Return ONLY a strict, valid JSON object. No markdown formatting, no conversational filler.
@@ -259,10 +263,10 @@ export const processFileFree = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { fileName, fileUrl, templateFields, batchJobId, userId } = event.data;
-    
+
     // Artificial velocity throttle for free users
     await step.sleep("velocity-throttle", "5s");
-    
+
     const extractedFields = await performExtraction(step, fileName, fileUrl, templateFields, batchJobId, userId);
     return { success: true, fileName, fields: extractedFields, tier: "free" };
   }
@@ -278,12 +282,12 @@ export const processFilePro = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { fileName, fileUrl, templateFields, batchJobId, userId } = event.data;
-    
+
     const extractedFields = await performExtraction(step, fileName, fileUrl, templateFields, batchJobId, userId);
-    
+
     // Cooldown to avoid Gemini 429 limits even for Pro
     await step.sleep("gemini-cooldown", "2s");
-    
+
     return { success: true, fileName, fields: extractedFields, tier: "pro" };
   }
 );
@@ -308,7 +312,7 @@ export const cleanupFreeTierData = inngest.createFunction(
       return statsSnapshot.docs.map((doc: any) => {
         // Document path is usually users/{userId}/stats/{docId} OR users/{userId} (if stats is flat)
         // In this app, useFirestore.ts uses: doc(db, "users", user.uid, "stats", "default")
-        return doc.ref.parent.parent?.id; 
+        return doc.ref.parent.parent?.id;
       }).filter(Boolean) as string[];
     });
 
@@ -318,7 +322,7 @@ export const cleanupFreeTierData = inngest.createFunction(
     // 2. Clean up each free user's data
     for (const uid of freeUsers) {
       await step.run(`cleanup-user-${uid}`, async () => {
-        
+
         // A. Delete old processed exports (Excel files)
         const exportsSnapshot = await getAdminDb()
           .collection(`users/${uid}/processedExports`)
@@ -328,7 +332,7 @@ export const cleanupFreeTierData = inngest.createFunction(
         for (const doc of exportsSnapshot.docs) {
           const data = doc.data();
           if (data.storagePath) {
-            try { await bucket.file(data.storagePath).delete(); } catch (e) {} // ignore if not found
+            try { await bucket.file(data.storagePath).delete(); } catch (e) { } // ignore if not found
           }
           await doc.ref.delete();
         }
@@ -342,7 +346,7 @@ export const cleanupFreeTierData = inngest.createFunction(
         for (const doc of filesSnapshot.docs) {
           const data = doc.data();
           if (data.storagePath) {
-            try { await bucket.file(data.storagePath).delete(); } catch (e) {} 
+            try { await bucket.file(data.storagePath).delete(); } catch (e) { }
           }
           await doc.ref.delete();
         }
@@ -360,5 +364,183 @@ export const cleanupFreeTierData = inngest.createFunction(
     }
 
     return { success: true, processedUsers: freeUsers.length };
+  }
+);
+
+// --- Credit allocation per tier ---
+const PLAN_CREDIT_MAP: Record<string, number> = {
+  Free: 10,
+  Starter: 150,
+  Business: 1000,
+  Enterprise: 5000,
+};
+
+// --- Razorpay Webhook Handler ---
+export const handleRazorpayEvent = inngest.createFunction(
+  {
+    id: "handle-razorpay-event",
+    retries: 5,
+    triggers: { event: "finflow/razorpay.webhook" as any },
+  },
+  async ({ event, step }) => {
+    const { eventType, payload } = event.data;
+
+    // --- PAYMENT CAPTURED (Top-Up Credits) ---
+    if (eventType === "payment.captured") {
+      await step.run("fulfill-topup-credits", async () => {
+        const payment = payload.payment?.entity;
+        if (!payment) return;
+
+        const notes = payment.notes || {};
+        if (notes.type !== "topup") return; // Only handle top-up payments
+
+        const userId = notes.userId;
+        const credits = parseInt(notes.credits, 10);
+        if (!userId || !credits) return;
+
+        const statsRef = getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("stats")
+          .doc("default");
+
+        await statsRef.update({
+          topUpCreditsRemaining: FieldValue.increment(credits),
+        });
+
+        // Log the transaction
+        await getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("transactions")
+          .add({
+            type: "topup",
+            credits,
+            amount: payment.amount / 100, // paise → rupees
+            currency: payment.currency,
+            razorpayPaymentId: payment.id,
+            razorpayOrderId: payment.order_id,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+
+        console.log(`[Razorpay] Fulfilled ${credits} top-up credits for user ${userId}`);
+      });
+    }
+
+    // --- SUBSCRIPTION ACTIVATED (New subscription starts) ---
+    if (eventType === "subscription.activated") {
+      await step.run("activate-subscription", async () => {
+        const subscription = payload.subscription?.entity;
+        if (!subscription) return;
+
+        const notes = subscription.notes || {};
+        const userId = notes.userId;
+        const tierName = notes.tierName || "Starter";
+        if (!userId) return;
+
+        const monthlyCredits = PLAN_CREDIT_MAP[tierName] || 150;
+
+        const statsRef = getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("stats")
+          .doc("default");
+
+        await statsRef.update({
+          subscriptionTier: tierName,
+          subscriptionId: subscription.id,
+          subscriptionStatus: "active",
+          monthlyCreditsRemaining: monthlyCredits,
+          rolloverCreditsRemaining: 0,
+        });
+
+        // Log
+        await getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("transactions")
+          .add({
+            type: "subscription_activated",
+            tier: tierName,
+            razorpaySubscriptionId: subscription.id,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+
+        console.log(`[Razorpay] Activated ${tierName} for user ${userId}`);
+      });
+    }
+
+    // --- SUBSCRIPTION CHARGED (Monthly/yearly renewal) ---
+    if (eventType === "subscription.charged") {
+      await step.run("renew-credits-with-rollover", async () => {
+        const subscription = payload.subscription?.entity;
+        if (!subscription) return;
+
+        const notes = subscription.notes || {};
+        const userId = notes.userId;
+        const tierName = notes.tierName || "Starter";
+        if (!userId) return;
+
+        const monthlyCredits = PLAN_CREDIT_MAP[tierName] || 150;
+
+        const statsRef = getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("stats")
+          .doc("default");
+
+        const statsDoc = await statsRef.get();
+        const currentStats = statsDoc.data() || {};
+
+        // 10% rollover calculation, capped at 1× monthly allowance
+        const currentMonthly = currentStats.monthlyCreditsRemaining || 0;
+        const currentRollover = currentStats.rolloverCreditsRemaining || 0;
+        const newRollover = Math.min(
+          currentRollover + Math.floor(currentMonthly * 0.10),
+          monthlyCredits // Cap at 1× monthly allowance
+        );
+
+        await statsRef.update({
+          monthlyCreditsRemaining: monthlyCredits,
+          rolloverCreditsRemaining: newRollover,
+          subscriptionStatus: "active",
+        });
+
+        console.log(
+          `[Razorpay] Renewed ${tierName} for ${userId}: ${monthlyCredits} monthly + ${newRollover} rollover`
+        );
+      });
+    }
+
+    // --- SUBSCRIPTION HALTED or CANCELLED ---
+    if (eventType === "subscription.halted" || eventType === "subscription.cancelled") {
+      await step.run("downgrade-to-free", async () => {
+        const subscription = payload.subscription?.entity;
+        if (!subscription) return;
+
+        const notes = subscription.notes || {};
+        const userId = notes.userId;
+        if (!userId) return;
+
+        const statsRef = getAdminDb()
+          .collection("users")
+          .doc(userId)
+          .collection("stats")
+          .doc("default");
+
+        await statsRef.update({
+          subscriptionTier: "Free",
+          subscriptionId: "",
+          subscriptionStatus: eventType === "subscription.cancelled" ? "cancelled" : "halted",
+          monthlyCreditsRemaining: PLAN_CREDIT_MAP.Free,
+          rolloverCreditsRemaining: 0,
+          // Top-up credits are preserved — they paid real money for those
+        });
+
+        console.log(`[Razorpay] Downgraded user ${userId} to Free (${eventType})`);
+      });
+    }
+
+    return { processed: eventType };
   }
 );

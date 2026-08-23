@@ -13,8 +13,12 @@ interface PlanCardProps {
 
 export const PlanCard: React.FC<PlanCardProps> = ({ plan, cycle, onSubscribe, isLoading }) => {
   const isYearly = cycle === BillingCycle.YEARLY;
-  const price = isYearly ? plan.yearlyPrice : plan.monthlyPrice;
-  const totalYearly = plan.yearlyPrice * 12;
+  const price = isYearly
+    ? Math.round(plan.yearlyPriceINR / (plan.id === 'free' ? 1 : (isYearly ? 10 : 1))) // Per-month equivalent
+    : plan.monthlyPriceINR;
+  const displayPrice = isYearly
+    ? Math.round(plan.yearlyPriceINR / 10)
+    : plan.monthlyPriceINR;
 
   return (
     <div className={`relative flex flex-col p-8 rounded-2xl transition-all duration-300 border ${
@@ -36,20 +40,24 @@ export const PlanCard: React.FC<PlanCardProps> = ({ plan, cycle, onSubscribe, is
       <div className="mb-8">
         <div className="flex items-baseline gap-1">
           <span className="text-4xl font-bold text-foreground tracking-tight">
-            ${price}
+            {plan.monthlyPriceINR === 0 ? 'Free' : `₹${displayPrice.toLocaleString('en-IN')}`}
           </span>
-          <span className="text-muted-foreground font-medium">/mo</span>
+          {plan.monthlyPriceINR > 0 && (
+            <span className="text-muted-foreground font-medium">/mo</span>
+          )}
         </div>
-        {isYearly && plan.monthlyPrice > 0 && (
+        {isYearly && plan.monthlyPriceINR > 0 && (
           <p className="text-primary text-xs font-semibold mt-2">
-            Billed ${totalYearly}/yr (Save 20%)
+            Billed ₹{plan.yearlyPriceINR.toLocaleString('en-IN')}/yr (2 months free)
           </p>
         )}
       </div>
 
       <div className="mb-8 p-4 bg-muted rounded-xl border border-border">
         <p className="text-foreground font-bold text-lg mb-1">{plan.allowance}</p>
-        <p className="text-muted-foreground text-xs uppercase font-semibold">Usage Allowance</p>
+        <p className="text-muted-foreground text-xs uppercase font-semibold">
+          {plan.monthlyCredits} Credits / Month
+        </p>
       </div>
 
       <ul className="space-y-3 mb-8 flex-grow">

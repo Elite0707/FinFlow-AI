@@ -1,20 +1,21 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { auth, db } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
 import { useFirestore } from '@/hooks/useFirestore';
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
 import { useToast } from '../../components/ui/use-toast';
 import { BillingCycle } from './types';
 import { PRICING_PLANS } from './constants';
 import { PlanCard } from './components/PlanCard';
 import { ComparisonTable } from './components/ComparisonTable';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 function PricingContent() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(BillingCycle.YEARLY);
@@ -25,41 +26,127 @@ function PricingContent() {
   const { user, loading } = useFirestore();
   const source = searchParams.get('source');
 
-  const handleSubscribe = async (plan: typeof PRICING_PLANS[0]) => {
-    const user = auth.currentUser;
-    if (!user) {
+  const loadRazorpayScript = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const handleSubscribe = useCallback(async (plan: typeof PRICING_PLANS[0]) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
       router.push('/login');
       return;
     }
 
     if (plan.id === 'free') {
-      // Free plan - just show success toast
-      toast({ title: 'Success', description: `You're now on the ${plan.name} plan` });
+      toast({ title: 'Success', description: `You're already on the Free plan` });
+      return;
+    }
+
+    // Enterprise → Contact Sales
+    if (plan.contactSales) {
+      window.open(
+        `mailto:sales@finflow.ai?subject=Enterprise%20Plan%20Inquiry&body=User%20ID:%20${currentUser.uid}%0AEmail:%20${currentUser.email}`,
+        '_blank'
+      );
       return;
     }
 
     setSubmitting(plan.id);
     try {
-      await addDoc(collection(db, 'subscriptions'), {
-        userId: user.uid,
-        planId: plan.id,
-        planName: plan.name,
-        price: billingCycle === BillingCycle.YEARLY ? plan.yearlyPrice : plan.monthlyPrice,
-        billingCycle,
-        status: 'active',
-        createdAt: serverTimestamp(),
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded) {
+        throw new Error('Failed to load Razorpay payment SDK.');
+      }
+      // 1. Create Razorpay Subscription on the server
+      const response = await fetch('/api/razorpay/create-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: plan.id,
+          billingCycle,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+        }),
       });
-      toast({
-        title: 'Subscribed Successfully',
-        description: `You've upgraded to ${plan.name}`
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        throw new Error(errorBody.error || 'Failed to create subscription');
+      }
+
+      const { subscriptionId } = await response.json();
+
+      // 2. Open Razorpay checkout modal
+      const options = {
+        key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").replace(/^["']|["']$/g, "").trim(),
+        subscription_id: subscriptionId,
+        name: 'FinFlow AI',
+        description: `${plan.name} Plan (${billingCycle === BillingCycle.YEARLY ? 'Yearly' : 'Monthly'})`,
+        handler: function () {
+          // Payment success — webhook will handle the actual upgrade
+          toast({
+            title: '🎉 Payment Successful!',
+            description: `Your ${plan.name} plan will activate shortly.`,
+            className: 'bg-green-500 text-white',
+          });
+          // Redirect to dashboard after a short delay
+          setTimeout(() => router.push('/dashboard/subscription'), 2000);
+        },
+        prefill: {
+          email: currentUser.email || '',
+        },
+        theme: {
+          color: '#10b981',
+        },
+        method: {
+          upi: true,
+          card: true,
+          netbanking: true,
+          wallet: true,
+        },
+        retry: {
+          enabled: false,
+        },
+        modal: {
+          backdropclose: false,
+          escape: true,
+          handleback: true,
+          ondismiss: function () {
+            setSubmitting(null);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", function (response: any) {
+        setSubmitting(null);
+        toast({
+          title: "Payment Error",
+          description: response.error?.description || "Razorpay rejected the payment key. Please verify your Key ID in dashboard.razorpay.com",
+          variant: "destructive",
+        });
       });
+      rzp.open();
     } catch (err) {
-      console.error('Subscribe failed', err);
-      toast({ title: 'Error', description: 'Subscription failed. Please try again.' });
+      console.error('Subscribe failed:', err);
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Subscription failed. Please try again.',
+      });
     } finally {
       setSubmitting(null);
     }
-  };
+  }, [billingCycle, router, toast]);
 
   return (
     <div className="min-h-screen pb-20">
@@ -83,13 +170,11 @@ function PricingContent() {
           {!loading && (
             <>
               {!user ? (
-                // Guest View
                 <>
                   <Link href="/" className="hover:text-foreground transition-colors">Go to Main Page</Link>
                   <Link href="/login" className="text-foreground hover:text-primary transition-colors">Sign In</Link>
                 </>
               ) : (
-                // Logged In View
                 <>
                   {source && (
                     <button
@@ -143,7 +228,7 @@ function PricingContent() {
           </button>
           <div className="flex items-center gap-2">
             <span className={`text-sm font-bold ${billingCycle === BillingCycle.YEARLY ? 'text-foreground' : 'text-muted-foreground'}`}>Yearly</span>
-            <span className="bg-green-100 text-green-700 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-200">Save 20%</span>
+            <span className="bg-green-100 text-green-700 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-200">2 Months Free</span>
           </div>
         </div>
       </header>
@@ -170,9 +255,9 @@ function PricingContent() {
           <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-96 h-96 bg-primary/20 rounded-full blur-3xl"></div>
           <div className="relative z-10 grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <h2 className="text-4xl font-bold mb-6 text-foreground">The "Business" Psychology</h2>
+              <h2 className="text-4xl font-bold mb-6 text-foreground">The &quot;Business&quot; Psychology</h2>
               <p className="text-muted-foreground text-lg mb-8 leading-relaxed">
-                Why do accountants love the <span className="text-primary font-bold">Business Plan</span>? It's simple math. For just $30 more than our Starter plan, you get <span className="text-primary font-bold italic">600% more volume.</span>
+                Why do accountants love the <span className="text-primary font-bold">Business Plan</span>? It&apos;s simple math. For just ₹1,800 more than our Starter plan, you get <span className="text-primary font-bold italic">600% more volume.</span>
               </p>
               <div className="space-y-4">
                 <div className="flex items-center gap-4 bg-background/50 p-4 rounded-2xl border border-white/5">
@@ -180,7 +265,7 @@ function PricingContent() {
                   <p className="text-sm font-medium text-foreground">Unused credits roll over to the next month.</p>
                 </div>
                 <div className="flex items-center gap-4 bg-background/50 p-4 rounded-2xl border border-white/5">
-                  <div className="w-10 h-10 bg-primary/20 text-primary rounded-lg flex items-center justify-center font-bold">94%</div>
+                  <div className="w-10 h-10 bg-primary/20 text-primary rounded-lg flex items-center justify-center font-bold">98%</div>
                   <p className="text-sm font-medium text-foreground">Typical profit margin for firms automating with us.</p>
                 </div>
               </div>
@@ -188,16 +273,16 @@ function PricingContent() {
             <div className="bg-background/50 p-8 rounded-3xl border border-white/5 backdrop-blur-sm">
               <h3 className="text-xl font-bold mb-6 text-foreground">Fair Use Transparency</h3>
               <p className="text-muted-foreground text-sm mb-6">
-                Most competitors charge by the page. We charge by the document to keep your billing predictable.
+                Most competitors charge by the page. We charge by credits to keep your billing predictable.
               </p>
               <div className="space-y-6">
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                  <span className="text-muted-foreground">1 Document =</span>
+                  <span className="text-muted-foreground">1 Credit =</span>
                   <span className="font-bold text-foreground">Up to 5 Pages</span>
                 </div>
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                  <span className="text-muted-foreground">Additional Pages</span>
-                  <span className="font-bold text-foreground">0.2 Credits / Page</span>
+                  <span className="text-muted-foreground">6-Page Document</span>
+                  <span className="font-bold text-foreground">2 Credits</span>
                 </div>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
                   *Protects you from large files while keeping marketing simple.

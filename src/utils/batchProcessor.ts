@@ -6,6 +6,7 @@ import { saveAs } from 'file-saver';
 export interface FileData {
     name: string;
     url: string; // The download URL from Firebase Storage
+    pages?: number;
 }
 
 export interface TemplateData {
@@ -47,7 +48,7 @@ export const startBatchProcessing = async (
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            files: files.map(f => ({ name: f.name, url: f.url })),
+            files: files.map(f => ({ name: f.name, url: f.url, pages: f.pages || 1 })),
             templateName: template.name,
             templateFields: template.extractionFields,
             userId,

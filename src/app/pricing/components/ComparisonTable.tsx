@@ -34,7 +34,7 @@ export const ComparisonTable: React.FC = () => {
                     {comp.name}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-foreground font-medium">${comp.price}</td>
+                <td className="px-6 py-4 text-foreground font-medium">₹{comp.price.toLocaleString('en-IN')}</td>
                 <td className="px-6 py-4 text-foreground font-medium">{comp.allowance}</td>
                 <td className="px-6 py-4">
                   <span className={`px-3 py-1 rounded-full text-sm font-bold ${
@@ -51,7 +51,7 @@ export const ComparisonTable: React.FC = () => {
         </table>
         <div className="bg-muted p-4">
           <p className="text-xs text-muted-foreground text-center italic">
-            *Competitors often charge per "page". We simplified it to "Documents". Comparison based on average 3-page invoice.
+            *Competitors often charge per &quot;page&quot;. We use a credit system (1 credit = up to 5 pages) for predictable billing.
           </p>
         </div>
       </div>

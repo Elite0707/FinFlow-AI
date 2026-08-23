@@ -11,6 +11,12 @@ export type InngestEvents = {
       userId: string;
     };
   };
+  "finflow/razorpay.webhook": {
+    data: {
+      eventType: string;
+      payload: any;
+    };
+  };
 };
 
 // Create the Inngest client — used to send events and define functions

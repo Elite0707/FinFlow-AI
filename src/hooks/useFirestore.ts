@@ -20,9 +20,19 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db, storage } from "@/lib/firebase";
 
 export interface UserStats {
+  subscriptionTier: "Free" | "Starter" | "Business" | "Enterprise";
+  subscriptionId?: string;          // Razorpay sub_xxx
+  subscriptionStatus: "active" | "halted" | "cancelled" | "free";
+  billingCycleEnd?: string;         // ISO date string
+
+  // Credit system (1 credit = up to 5 pages)
+  monthlyCreditsRemaining: number;  // Use-it-or-lose-it each cycle
+  rolloverCreditsRemaining: number; // Capped at 1× monthly allowance
+  topUpCreditsRemaining: number;    // Non-expiring, purchased separately
+
+  // Usage telemetry
   totalDocumentsProcessed: number;
-  creditsRemaining?: number; // Only for paid tiers (Starter, Business, Pro)
-  subscriptionTier: "Free" | "Starter" | "Business" | "Pro";
+  totalPagesProcessed: number;
   activeTemplatesCount: number;
 }
 
@@ -30,12 +40,33 @@ export interface UserUsage {
   monthlyUploadCount: number;
 }
 
+// Credit allocations per tier
+export const PLAN_CREDITS: Record<UserStats["subscriptionTier"], number> = {
+  Free: 10,
+  Starter: 150,
+  Business: 1000,
+  Enterprise: 5000,
+};
+
 // Free tier limits
 export const FREE_TIER_LIMITS = {
-  maxInvoicesPerMonth: 10,
+  maxCreditsPerMonth: 10,
   maxTemplates: 1,
   storageRetentionDays: 7,
+  maxPagesPerDocument: 1, // Single-page limit for free users
 };
+
+/**
+ * Get total available credits across all buckets.
+ */
+export function getTotalCredits(stats: UserStats | null): number {
+  if (!stats) return 0;
+  return (
+    (stats.monthlyCreditsRemaining || 0) +
+    (stats.rolloverCreditsRemaining || 0) +
+    (stats.topUpCreditsRemaining || 0)
+  );
+}
 
 export interface BatchJobDoc {
   id: string;
@@ -119,7 +150,7 @@ export function useFirestore() {
         // Avoid crashing the app when Firestore rules block reads.
         // This gives the UI a safe empty state instead of throwing continuously.
         if ((err as any)?.code === "permission-denied") {
-          console.warn(`[Firestore] permission-denied while listening to ${label}.`);
+          console.info(`[Firestore] Initializing empty state for ${label} (permission-denied fallback).`);
           if (label === "stats") setStats(null);
           if (label === "usage") setUsage(null);
           if (label === "usage") setUsage(null);
@@ -141,13 +172,16 @@ export function useFirestore() {
           if (docSnap.exists()) {
             setStats(docSnap.data() as UserStats);
           } else {
-            // Create default stats — Free tier has no credits
+            // Create default stats — Free tier has 10 monthly credits
             const defaultStats: UserStats = {
-              totalDocumentsProcessed: 0,
               subscriptionTier: "Free",
+              subscriptionStatus: "free",
+              monthlyCreditsRemaining: 10,
+              rolloverCreditsRemaining: 0,
+              topUpCreditsRemaining: 0,
+              totalDocumentsProcessed: 0,
+              totalPagesProcessed: 0,
               activeTemplatesCount: 0,
-              // creditsRemaining is omitted for Free tier
-              // Paid tiers (Starter/Business/Pro) will set this on upgrade
             };
             setDoc(statsRef, defaultStats);
             setStats(defaultStats);
@@ -211,20 +245,26 @@ export function useFirestore() {
         (err) => handlePermissionDenied("templates", err)
       );
 
-      // Listen to subscriptions
-      const subscriptionsQuery = query(
-        collection(db, "subscriptions"),
-        where("userId", "==", currentUser.uid),
+      // Listen to transactions / subscriptions subcollection
+      const transactionsQuery = query(
+        collection(db, `users/${currentUser.uid}/transactions`),
         orderBy("createdAt", "desc")
       );
 
       const unsubscribeSubscriptions = onSnapshot(
-        subscriptionsQuery,
+        transactionsQuery,
         (snapshot) => {
-          const items = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as Subscription[];
+          const items = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              planName: data.type === "topup" ? `Top-Up (${data.credits} Credits)` : (data.tier || "Subscription"),
+              price: data.amount || 0,
+              status: "active",
+              createdAt: data.createdAt,
+              ...data,
+            };
+          }) as unknown as Subscription[];
           setSubscriptions(items);
         },
         (err) => handlePermissionDenied("subscriptions", err)
