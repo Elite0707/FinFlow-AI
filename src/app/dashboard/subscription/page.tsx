@@ -69,11 +69,11 @@ export default function SubscriptionPage() {
         throw new Error(errorData.error || "Failed to create order");
       }
 
-      const { orderId, amount, currency } = await res.json();
+      const { orderId, keyId, amount, currency } = await res.json();
 
       // 2. Open Razorpay Checkout Modal
       const options = {
-        key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").replace(/^["']|["']$/g, "").trim(),
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").replace(/^["']|["']$/g, "").trim(),
         amount,
         currency,
         name: "FinFlow AI",

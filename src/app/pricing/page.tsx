@@ -84,11 +84,11 @@ function PricingContent() {
         throw new Error(errorBody.error || 'Failed to create subscription');
       }
 
-      const { subscriptionId } = await response.json();
+      const { subscriptionId, keyId } = await response.json();
 
       // 2. Open Razorpay checkout modal
       const options = {
-        key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").replace(/^["']|["']$/g, "").trim(),
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").replace(/^["']|["']$/g, "").trim(),
         subscription_id: subscriptionId,
         name: 'FinFlow AI',
         description: `${plan.name} Plan (${billingCycle === BillingCycle.YEARLY ? 'Yearly' : 'Monthly'})`,

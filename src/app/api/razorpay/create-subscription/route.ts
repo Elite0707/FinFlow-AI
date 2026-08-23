@@ -63,6 +63,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       subscriptionId: subscription.id,
+      keyId: process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
       planId: razorpayPlanId,
       tierName,
       billingCycle,

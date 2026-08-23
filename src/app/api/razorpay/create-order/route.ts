@@ -59,6 +59,7 @@ export async function POST(req: Request) {
         console.log(`[Razorpay] Created live order ${orderData.id} for ${bundle.credits} credits`);
         return NextResponse.json({
           orderId: orderData.id,
+          keyId: keyId || process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
           amount: bundle.pricePaise,
           currency: "INR",
           credits: bundle.credits,
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       orderId: mockOrderId,
+      keyId: keyId || process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
       amount: bundle.pricePaise,
       currency: "INR",
       credits: bundle.credits,
