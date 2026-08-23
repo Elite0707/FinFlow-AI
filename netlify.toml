@@ -1,6 +1,7 @@
 [build]
   command = "npm run build"
   publish = ".next"
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_RAZORPAY_KEY_ID"
 
 [[plugins]]
   package = "netlify-plugin-inngest"
