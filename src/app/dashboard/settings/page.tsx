@@ -9,7 +9,11 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Bell, Lock, User, Globe, Moon } from "lucide-react";
 
+import { useFirestore } from "@/hooks/useFirestore";
+
 export default function SettingsPage() {
+  const { user } = useFirestore();
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
@@ -48,11 +52,11 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Display Name</Label>
-                <Input id="name" defaultValue="John Doe" />
+                <Input id="name" defaultValue={user?.displayName || ""} placeholder="Your Full Name" />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="email">Email Address</Label>
-                <Input id="email" defaultValue="john@example.com" />
+                <Input id="email" defaultValue={user?.email || ""} placeholder="name@company.com" readOnly />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="language">Language</Label>

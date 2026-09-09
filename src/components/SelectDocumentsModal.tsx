@@ -1,5 +1,5 @@
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,6 +29,13 @@ export function SelectDocumentsModal({
 }: SelectDocumentsModalProps) {
     const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState(isFree ? "files" : "batches");
+
+    // Reset selection state when modal is closed
+    useEffect(() => {
+        if (!isOpen) {
+            setSelectedFileIds([]);
+        }
+    }, [isOpen]);
 
     // Group files by batchId
     const batches = useMemo(() => {
@@ -75,6 +82,16 @@ export function SelectDocumentsModal({
                 ? prev.filter(id => id !== fileId)
                 : [...prev, fileId]
         );
+    };
+
+    const isAllFilesSelected = files.length > 0 && files.every(f => selectedFileIds.includes(f.id));
+
+    const toggleSelectAllFiles = () => {
+        if (isAllFilesSelected) {
+            setSelectedFileIds([]);
+        } else {
+            setSelectedFileIds(files.map(f => f.id));
+        }
     };
 
     const toggleBatch = (batchFiles: UserFile[]) => {
@@ -138,7 +155,7 @@ export function SelectDocumentsModal({
                                             <p className="text-sm text-muted-foreground max-w-[280px] mb-4">
                                                 Process multiple invoices at once with a single click. Available on paid plans.
                                             </p>
-                                            <Badge variant="outline" className="text-xs px-3 py-1">Upgrade to Pro</Badge>
+                                            <Badge variant="outline" className="text-xs px-3 py-1 cursor-pointer" onClick={() => window.location.href = '/pricing'}>Upgrade Plan</Badge>
                                         </div>
                                     ) : (
                                         <>
@@ -213,11 +230,26 @@ export function SelectDocumentsModal({
                                         <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 mb-4 flex items-start gap-3">
                                             <Zap className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                                             <div>
-                                                <h4 className="text-sm font-medium text-primary">Upgrade to Pro for Lightning Extraction</h4>
+                                                <h4 className="text-sm font-medium text-primary">Upgrade Plan for Batch Extraction</h4>
                                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                                    Process up to 50 invoices in 8 seconds. Free tier processes files individually.
+                                                    Process multiple invoices simultaneously. Free tier processes files individually.
                                                 </p>
                                             </div>
+                                        </div>
+                                    )}
+                                    {files.length > 0 && (
+                                        <div className="flex items-center justify-between px-1 pb-2 mb-2 border-b">
+                                            <span className="text-xs text-muted-foreground font-medium">
+                                                {files.length} Available Document{files.length !== 1 && 's'}
+                                            </span>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 px-2.5 text-xs text-primary font-semibold hover:text-primary hover:bg-primary/10"
+                                                onClick={toggleSelectAllFiles}
+                                            >
+                                                {isAllFilesSelected ? "Deselect All" : "Select All"}
+                                            </Button>
                                         </div>
                                     )}
                                     {files.map((file) => (

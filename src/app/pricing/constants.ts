@@ -11,6 +11,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     allowance: '10 Credits / Mo',
     features: [
       'Standard AI OCR',
+      'Up to 2 Pages per Document',
       'Basic Export (JSON)',
       'Community Support',
       'Secure Cloud Storage (7-day)',

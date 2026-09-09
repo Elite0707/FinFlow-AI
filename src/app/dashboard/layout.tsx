@@ -90,29 +90,41 @@ export default function DashboardLayout({
           {usage && (
             <Link href="/dashboard/subscription">
               <div className="bg-primary/10 rounded-lg p-4 mb-4 hover:bg-primary/15 transition-colors cursor-pointer block">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-primary">Monthly Usage</span>
-                  <span className={`text-xs ${usage.monthlyUploadCount >= 10
-                    ? "text-destructive font-bold"
-                    : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
-                    }`}>
-                    {usage.monthlyUploadCount} / 10
-                  </span>
-                </div>
-                <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${usage.monthlyUploadCount >= 10
-                      ? "bg-destructive w-full"
-                      : usage.monthlyUploadCount >= 8
-                        ? "bg-yellow-500"
-                        : "bg-emerald-500"
-                      }`}
-                    style={{ width: `${Math.min(100, (usage.monthlyUploadCount / 10) * 100)}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {usage.monthlyUploadCount >= 10 ? "Limit Reached" : "Resets in 30 days"}
-                </p>
+                {(() => {
+                  const tier = stats?.subscriptionTier || "Free";
+                  const limits: Record<string, number> = { Free: 10, Starter: 150, Business: 1000, Enterprise: 5000 };
+                  const maxLimit = limits[tier] || 10;
+                  const count = usage.monthlyUploadCount || 0;
+                  const isLimit = count >= maxLimit;
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-primary">Monthly Usage ({tier})</span>
+                        <span className={`text-xs ${isLimit
+                          ? "text-destructive font-bold"
+                          : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
+                          }`}>
+                          {count} / {maxLimit}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${isLimit
+                            ? "bg-destructive w-full"
+                            : count >= maxLimit * 0.8
+                              ? "bg-yellow-500"
+                              : "bg-emerald-500"
+                            }`}
+                          style={{ width: `${Math.min(100, (count / maxLimit) * 100)}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {isLimit ? "Limit Reached" : `${maxLimit - count} documents remaining`}
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
             </Link>
           )}
@@ -206,9 +218,9 @@ export default function DashboardLayout({
                         <CreditCard className="h-4 w-4 text-blue-500" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium">Subscription renewed</p>
-                        <p className="text-xs text-muted-foreground mt-1">Your Pro plan has been renewed for November.</p>
-                        <p className="text-[10px] text-muted-foreground mt-2">1 day ago</p>
+                        <p className="text-sm font-medium">Subscription active</p>
+                        <p className="text-xs text-muted-foreground mt-1">Your {stats?.subscriptionTier || "Starter"} plan is active with full features.</p>
+                        <p className="text-[10px] text-muted-foreground mt-2">Just now</p>
                       </div>
                     </div>
                   </div>
@@ -223,8 +235,12 @@ export default function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar>
-                    <AvatarImage src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&q=80" />
-                    <AvatarFallback>JD</AvatarFallback>
+                    <AvatarImage src={user?.photoURL || ""} />
+                    <AvatarFallback className="bg-primary/20 text-primary font-semibold">
+                      {user?.displayName
+                        ? user.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+                        : (user?.email ? user.email.slice(0, 2).toUpperCase() : "U")}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>

@@ -79,10 +79,26 @@ export default function SubscriptionPage() {
         name: "FinFlow AI",
         description: `Top-Up: ${bundle.label} (${bundle.credits} Credits)`,
         order_id: orderId,
-        handler: function () {
+        handler: async function (response: any) {
+          try {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: currentUser.uid,
+                type: "topup",
+                bundleId: bundle.id,
+                razorpayOrderId: response?.razorpay_order_id || orderId,
+                razorpayPaymentId: response?.razorpay_payment_id,
+              }),
+            });
+          } catch (e) {
+            console.error("Instant fulfillment error:", e);
+          }
+
           toast({
             title: "🎉 Top-Up Purchased!",
-            description: `${bundle.credits} credits will be added to your account momentarily.`,
+            description: `${bundle.credits} credits have been added to your balance!`,
             className: "bg-green-500 text-white",
           });
         },
@@ -406,22 +422,29 @@ export default function SubscriptionPage() {
                 <div className="text-right">Amount</div>
               </div>
               <div className="divide-y divide-border">
-                {subscriptions.map((sub) => (
-                  <div key={sub.id} className="grid grid-cols-4 p-4 text-sm">
-                    <div>
-                      {sub.createdAt?.seconds
-                        ? format(new Date(sub.createdAt.seconds * 1000), "MMM d, yyyy")
-                        : "Recent"}
+                {subscriptions.map((sub: any) => {
+                  let dateStr = "Recent";
+                  if (sub.createdAt?.seconds) {
+                    dateStr = format(new Date(sub.createdAt.seconds * 1000), "MMM d, yyyy");
+                  } else if (typeof sub.createdAt === "string") {
+                    try { dateStr = format(new Date(sub.createdAt), "MMM d, yyyy"); } catch (e) {}
+                  }
+
+                  const displayAmount = sub.price || sub.amount || 0;
+
+                  return (
+                    <div key={sub.id} className="grid grid-cols-4 p-4 text-sm items-center">
+                      <div>{dateStr}</div>
+                      <div className="font-medium">{sub.planName || sub.tier || "Subscription"}</div>
+                      <div>
+                        <Badge variant="outline" className="capitalize border-emerald-500/30 text-emerald-400">
+                          {sub.status || "active"}
+                        </Badge>
+                      </div>
+                      <div className="text-right font-semibold">₹{displayAmount.toLocaleString("en-IN")}</div>
                     </div>
-                    <div>{sub.planName}</div>
-                    <div>
-                      <Badge variant="outline" className="capitalize">
-                        {sub.status}
-                      </Badge>
-                    </div>
-                    <div className="text-right">₹{sub.price?.toLocaleString("en-IN") || 0}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

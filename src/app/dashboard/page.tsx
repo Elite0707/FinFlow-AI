@@ -47,10 +47,14 @@ export default function DashboardPage() {
     ? Math.round((successCount / allResults.length) * 100)
     : 0;
 
-  // Free tier info — simple 10 invoices/month
-  const isFree = stats?.subscriptionTier === "Free";
+  // Tier-based limits
+  const tier = stats?.subscriptionTier || "Free";
+  const limits: Record<string, number> = { Free: 10, Starter: 150, Business: 1000, Enterprise: 5000 };
+  const maxLimit = limits[tier] || 10;
+
+  const isFree = tier === "Free";
   const invoiceCount = usage?.monthlyUploadCount || 0;
-  const invoicesRemaining = Math.max(0, 10 - invoiceCount);
+  const invoicesRemaining = Math.max(0, maxLimit - invoiceCount);
 
   if (loading) {
     return (
@@ -195,16 +199,16 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {invoiceCount} <span className="text-sm font-normal text-muted-foreground">/ 10</span>
+              {invoiceCount} <span className="text-sm font-normal text-muted-foreground">/ {maxLimit}</span>
             </div>
             <div className="w-full bg-secondary h-1.5 rounded-full mt-2">
               <div
-                className={`h-full rounded-full transition-all ${invoiceCount >= 10 ? "bg-destructive" : invoiceCount >= 8 ? "bg-yellow-500" : "bg-primary"}`}
-                style={{ width: `${Math.min(100, (invoiceCount / 10) * 100)}%` }}
+                className={`h-full rounded-full transition-all ${invoiceCount >= maxLimit ? "bg-destructive" : invoiceCount >= maxLimit * 0.8 ? "bg-yellow-500" : "bg-primary"}`}
+                style={{ width: `${Math.min(100, (invoiceCount / maxLimit) * 100)}%` }}
               />
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {invoicesRemaining > 0 ? `${invoicesRemaining} remaining` : "Limit reached"} · Free Plan
+              {invoicesRemaining > 0 ? `${invoicesRemaining} remaining` : "Limit reached"} · {tier} Plan
             </p>
           </CardContent>
         </Card>

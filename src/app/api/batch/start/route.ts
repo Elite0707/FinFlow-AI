@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       .collection("users")
       .doc(userId)
       .collection("stats")
-      .doc("default");
+      .doc("overview");
 
     const statsDoc = await statsRef.get();
     const stats = statsDoc.data() || {};

@@ -127,8 +127,8 @@ export default function HistoryPage() {
             <p className="text-sm text-amber-600/80 dark:text-amber-400/80 mt-1">
               On the Free tier, your history, uploaded documents, and generated ledgers are permanently deleted after 7 days.
             </p>
-            <Button variant="link" className="p-0 h-auto text-sm text-amber-600 dark:text-amber-400 font-semibold mt-2">
-              Upgrade to Pro for permanent ledger storage &rarr;
+            <Button variant="link" onClick={() => window.location.href = '/pricing'} className="p-0 h-auto text-sm text-amber-600 dark:text-amber-400 font-semibold mt-2">
+              Upgrade your plan for permanent ledger storage &rarr;
             </Button>
           </div>
         </div>

@@ -92,15 +92,30 @@ function PricingContent() {
         subscription_id: subscriptionId,
         name: 'FinFlow AI',
         description: `${plan.name} Plan (${billingCycle === BillingCycle.YEARLY ? 'Yearly' : 'Monthly'})`,
-        handler: function () {
-          // Payment success — webhook will handle the actual upgrade
+        handler: async function (response: any) {
+          try {
+            await fetch("/api/razorpay/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: currentUser.uid,
+                type: "subscription",
+                planId: plan.id,
+                billingCycle: billingCycle === BillingCycle.YEARLY ? "yearly" : "monthly",
+                razorpaySubscriptionId: response?.razorpay_subscription_id || subscriptionId,
+                razorpayPaymentId: response?.razorpay_payment_id,
+              }),
+            });
+          } catch (e) {
+            console.error("Instant fulfillment error:", e);
+          }
+
           toast({
-            title: '🎉 Payment Successful!',
-            description: `Your ${plan.name} plan will activate shortly.`,
-            className: 'bg-green-500 text-white',
+            title: "🎉 Plan Activated!",
+            description: `Welcome to the ${plan.name} plan!`,
+            className: "bg-green-500 text-white",
           });
-          // Redirect to dashboard after a short delay
-          setTimeout(() => router.push('/dashboard/subscription'), 2000);
+          setTimeout(() => router.push("/dashboard/subscription"), 1000);
         },
         prefill: {
           email: currentUser.email || '',

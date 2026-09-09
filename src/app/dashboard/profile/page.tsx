@@ -13,22 +13,17 @@ import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
+import { useFirestore } from "@/hooks/useFirestore";
+
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, stats, loading } = useFirestore();
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        router.push("/login");
-      } else {
-        setUser(currentUser);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [router]);
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [loading, user, router]);
 
   if (loading) {
     return (
@@ -41,11 +36,13 @@ export default function ProfilePage() {
   if (!user) return null;
 
   const names = user.displayName ? user.displayName.split(" ") : ["", ""];
-  const firstName = names[0] || "";
+  const firstName = names[0] || "User";
   const lastName = names.slice(1).join(" ") || "";
   const joinDate = user.metadata.creationTime 
     ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : "Unknown";
+
+  const tierName = stats?.subscriptionTier || "Free";
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -60,18 +57,16 @@ export default function ProfilePage() {
             <CardContent className="pt-6 flex flex-col items-center text-center">
               <div className="relative mb-4">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage src={user.photoURL || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80"} />
-                  <AvatarFallback>{firstName[0]}{lastName[0]}</AvatarFallback>
+                  <AvatarImage src={user.photoURL || ""} />
+                  <AvatarFallback className="text-2xl font-bold bg-primary/20 text-primary">
+                    {firstName[0]}{(lastName[0] || "")}
+                  </AvatarFallback>
                 </Avatar>
-                <Button size="sm" variant="secondary" className="absolute bottom-0 right-0 rounded-full h-8 w-8 p-0">
-                  <span className="sr-only">Edit</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                </Button>
               </div>
               <h2 className="text-xl font-bold">{user.displayName || "User"}</h2>
-              <p className="text-muted-foreground text-sm">Product Manager</p>
+              <p className="text-muted-foreground text-sm">{user.email}</p>
               <div className="mt-4 flex gap-2 justify-center">
-                <Badge variant="secondary">Pro Plan</Badge>
+                <Badge variant="secondary" className="font-semibold">{tierName} Plan</Badge>
                 {user.emailVerified ? (
                   <Badge variant="outline" className="border-emerald-500 text-emerald-500">Verified</Badge>
                 ) : (
@@ -83,7 +78,7 @@ export default function ProfilePage() {
           
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm font-medium uppercase text-muted-foreground">Contact Info</CardTitle>
+              <CardTitle className="text-sm font-medium uppercase text-muted-foreground">Account Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-3 text-sm">
@@ -91,18 +86,6 @@ export default function ProfilePage() {
                 <span className="truncate">{user.email}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span>+1 (555) 123-4567</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <Building className="h-4 w-4 text-muted-foreground" />
-                <span>Acme Corp</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>San Francisco, CA</span>
-              </div>
-               <div className="flex items-center gap-3 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span>Joined {joinDate}</span>
               </div>

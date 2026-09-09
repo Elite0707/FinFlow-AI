@@ -52,14 +52,25 @@ export default function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
-  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB Limit
-
   // userFiles comes from our updated hook
   const { uploadFile, userFiles, deleteUserFile, loading, usage, stats } = useFirestore();
   const { toast } = useToast();
 
+  const tier = stats?.subscriptionTier || "Free";
+
+  const TIER_LIMITS: Record<string, { maxUploads: number; maxFileSizeMB: number; maxPdfPages: number }> = {
+    Free: { maxUploads: 10, maxFileSizeMB: 5, maxPdfPages: 2 },
+    Starter: { maxUploads: 150, maxFileSizeMB: 25, maxPdfPages: 25 },
+    Business: { maxUploads: 1000, maxFileSizeMB: 100, maxPdfPages: 100 },
+    Enterprise: { maxUploads: 5000, maxFileSizeMB: 500, maxPdfPages: 500 },
+  };
+
+  const currentTierLimits = TIER_LIMITS[tier] || TIER_LIMITS.Free;
+  const MAX_FILE_SIZE = currentTierLimits.maxFileSizeMB * 1024 * 1024;
+  const maxUploadCount = currentTierLimits.maxUploads;
+
   const monthlyUploadCount = usage?.monthlyUploadCount || 0;
-  const isLimitReached = monthlyUploadCount >= 10;
+  const isLimitReached = monthlyUploadCount >= maxUploadCount;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -84,7 +95,7 @@ export default function UploadPage() {
       oversizedFiles.forEach(f => {
         toast({
           title: "File Too Large",
-          description: `${f.name} exceeds the 2MB limit for the Free Plan.`,
+          description: `${f.name} exceeds the ${currentTierLimits.maxFileSizeMB}MB limit for the ${tier} Plan.`,
           variant: "destructive"
         });
       });
@@ -100,9 +111,9 @@ export default function UploadPage() {
 
     if (potentiallyValidFiles.length === 0) return;
 
-    // Check PDF Page Counts (Free tier limit: 1 page per document)
-    const isFreeTier = stats?.subscriptionTier === "Free";
-    const MAX_PAGES_ALLOWED = isFreeTier ? 1 : 100;
+    // Check PDF Page Counts
+    const isFreeTier = tier === "Free";
+    const MAX_PAGES_ALLOWED = currentTierLimits.maxPdfPages;
     const finalFiles: File[] = [];
 
     for (const file of potentiallyValidFiles) {
@@ -112,7 +123,7 @@ export default function UploadPage() {
           if (pageCount > MAX_PAGES_ALLOWED) {
             toast({
               title: "Page Limit Exceeded",
-              description: `${file.name} has ${pageCount} page(s). ${isFreeTier ? "Free plan is limited to 1 page per document." : "Document exceeds page limit."}`,
+              description: `${file.name} has ${pageCount} page(s). ${tier} plan is limited to ${MAX_PAGES_ALLOWED} page(s) per document.`,
               variant: "destructive"
             });
             continue; // Skip this file
@@ -132,11 +143,11 @@ export default function UploadPage() {
     if (finalFiles.length === 0) return;
 
     // Check count limit
-    if (monthlyUploadCount + finalFiles.length > 10) {
+    if (monthlyUploadCount + finalFiles.length > maxUploadCount) {
       setIsUpgradeModalOpen(true);
       toast({
         title: "Upload Limit Exceeded",
-        description: "Uploading these files would exceed your monthly limit.",
+        description: `Uploading these files would exceed your ${tier} plan limit of ${maxUploadCount} files per month.`,
         variant: "destructive"
       });
       return;
@@ -321,7 +332,7 @@ export default function UploadPage() {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Monthly Limit Reached</AlertTitle>
               <AlertDescription className="flex items-center justify-between mt-2">
-                <span>You have reached the 10-file monthly upload limit. Upgrade to Pro for unlimited uploads.</span>
+                <span>You have reached the {maxUploadCount}-file monthly upload limit for your {tier} plan. Upgrade to increase your limit.</span>
                 <Link href="/pricing?source=limit">
                   <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
                     Upgrade Now
@@ -332,12 +343,12 @@ export default function UploadPage() {
           )}
 
           <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-muted-foreground">Monthly Usage</span>
+            <span className="text-muted-foreground">Monthly Usage ({tier} Plan)</span>
             <span className={isLimitReached ? "text-destructive font-medium" : "text-foreground"}>
-              {monthlyUploadCount} / 10 uploads
+              {monthlyUploadCount} / {maxUploadCount} uploads
             </span>
           </div>
-          <Progress value={(monthlyUploadCount / 10) * 100} className="h-2 mb-6" />
+          <Progress value={(monthlyUploadCount / maxUploadCount) * 100} className="h-2 mb-6" />
 
           <div
             className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${isLimitReached
@@ -368,7 +379,7 @@ export default function UploadPage() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Supports PDF, JPG, PNG, XLSX (max 2MB)
+                Supports PDF, JPG, PNG, XLSX (max {currentTierLimits.maxFileSizeMB}MB per file)
               </p>
             </div>
           </div>
@@ -568,39 +579,37 @@ export default function UploadPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">
               <Crown className="h-6 w-6 text-primary fill-primary/20" />
-              Scale with FinFlow Pro
+              Upgrade Your FinFlow Plan
             </DialogTitle>
             <DialogDescription className="pt-2">
-              You&apos;ve reached the free tier limit of 10 uploads per month. Upgrade to Pro for unlimited access and advanced features.
+              You&apos;ve reached your free tier monthly upload limit. Upgrade to a paid plan for higher document limits, batch processing, and priority AI extraction.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid gap-3">
               <div className="flex items-center gap-3 p-3 rounded-lg border bg-secondary/20">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span className="font-medium">Unlimited Documents</span>
+                <span className="font-medium">Up to 1,000 Documents / Month</span>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg border bg-secondary/20">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span className="font-medium">Priority AI Extraction</span>
+                <span className="font-medium">Up to 100 Pages per Document</span>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg border bg-secondary/20">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span className="font-medium">Excel Export</span>
+                <span className="font-medium">Excel & CSV Data Export</span>
               </div>
             </div>
           </div>
-          <DialogFooter className="flex-col sm:justify-between gap-2">
-            <Link href="/pricing?source=limit" className="w-full">
-              <Button
-                className="w-full text-lg py-6"
-              >
-                Upgrade Now ($19/mo)
-              </Button>
-            </Link>
-            <Button variant="ghost" onClick={() => setIsUpgradeModalOpen(false)}>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 pt-2">
+            <Button variant="ghost" className="w-full sm:w-auto" onClick={() => setIsUpgradeModalOpen(false)}>
               Maybe Later
             </Button>
+            <Link href="/pricing?source=limit" className="w-full sm:w-auto">
+              <Button className="w-full sm:w-auto px-6 font-semibold">
+                Upgrade Now (From ₹1,199/mo)
+              </Button>
+            </Link>
           </DialogFooter>
         </DialogContent>
       </Dialog>

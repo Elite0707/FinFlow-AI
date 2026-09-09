@@ -29,8 +29,8 @@ export default function SignupPage() {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // Note: We don't need to send verification email for Google auth as it's already verified
-      router.push("/dashboard");
+      // Redirect new account to Pricing page
+      router.push("/pricing?new_account=true");
     } catch (err: any) {
       // Common in preview/Tempo environments when the current domain isn't in Firebase Auth "Authorized domains"
       if (err?.code === "auth/unauthorized-domain") {

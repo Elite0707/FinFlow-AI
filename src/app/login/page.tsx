@@ -56,7 +56,13 @@ export default function LoginPage() {
         await signOut(auth);
         setVerificationNeeded(true);
       } else {
-        router.push("/dashboard");
+        const creationTime = user.metadata.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
+        const isNewUser = Date.now() - creationTime < 5 * 60 * 1000; // Account created in last 5 minutes
+        if (isNewUser) {
+          router.push("/pricing?new_account=true");
+        } else {
+          router.push("/dashboard");
+        }
       }
     } catch (err: any) {
       console.error("Login error:", err);

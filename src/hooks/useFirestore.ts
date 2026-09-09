@@ -218,10 +218,25 @@ export function useFirestore() {
       const unsubscribeFiles = onSnapshot(
         filesQuery,
         (snapshot) => {
-          const items = snapshot.docs.map((doc) => ({
+          let items = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
           })) as UserFile[];
+
+          // 7-Day Ephemerality enforcement for Free tier
+          const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          items = items.filter((file) => {
+            const fileTier = stats?.subscriptionTier || "Free";
+            if (fileTier === "Free") {
+              const fileTime = file.createdAt?.seconds ? file.createdAt.seconds * 1000 : (file.createdAt?.toDate ? file.createdAt.toDate().getTime() : 0);
+              if (fileTime && (now - fileTime > SEVEN_DAYS_MS)) {
+                return false;
+              }
+            }
+            return true;
+          });
+
           setUserFiles(items);
         },
         (err) => handlePermissionDenied("files", err)
@@ -295,10 +310,25 @@ export function useFirestore() {
       const unsubscribeExports = onSnapshot(
         exportsQuery,
         (snapshot) => {
-          const exportList = snapshot.docs.map((doc) => ({
+          let exportList = snapshot.docs.map((doc) => ({
             id: doc.id,
             ...doc.data(),
           })) as ProcessedExport[];
+
+          // 7-Day Ephemerality enforcement for Free tier
+          const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          exportList = exportList.filter((exp) => {
+            const expTier = stats?.subscriptionTier || "Free";
+            if (expTier === "Free") {
+              const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : (exp.createdAt?.toDate ? exp.createdAt.toDate().getTime() : 0);
+              if (expTime && (now - expTime > SEVEN_DAYS_MS)) {
+                return false;
+              }
+            }
+            return true;
+          });
+
           setProcessedExports(exportList);
         },
         (err) => handlePermissionDenied("processedExports", err)

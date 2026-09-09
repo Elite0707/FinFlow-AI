@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getAdminDb, getAdminStorage } from "@/lib/firebaseAdmin";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import ExcelJS from "exceljs";
 import crypto from "crypto";
 
@@ -276,7 +276,7 @@ export const processFileFree = inngest.createFunction(
 export const processFilePro = inngest.createFunction(
   {
     id: "finflow-process-file-pro",
-    concurrency: { limit: 5 }, // Process 5 in parallel (Inngest plan limit)
+    concurrency: { limit: 10 }, // Process up to 10 in parallel for Pro/Business users
     retries: 3,
     triggers: { event: "finflow/file.process.pro" },
   },
@@ -301,64 +301,74 @@ export const cleanupFreeTierData = inngest.createFunction(
   async ({ step }) => {
     const bucket = getAdminStorage().bucket();
 
-    // 1. Get all Free users
+    // 1. Get all Free users (either tier is "Free" or stats doc not created/default)
     const freeUsers = await step.run("fetch-free-users", async () => {
-      const statsSnapshot = await getAdminDb()
-        .collectionGroup("stats")
-        .where("subscriptionTier", "==", "Free")
-        .get();
+      const usersSnapshot = await getAdminDb().collection("users").get();
+      const freeUserIds: string[] = [];
 
-      // The path is users/{uid}/stats/stats (or similar). We need the uid.
-      return statsSnapshot.docs.map((doc: any) => {
-        // Document path is usually users/{userId}/stats/{docId} OR users/{userId} (if stats is flat)
-        // In this app, useFirestore.ts uses: doc(db, "users", user.uid, "stats", "default")
-        return doc.ref.parent.parent?.id;
-      }).filter(Boolean) as string[];
+      for (const userDoc of usersSnapshot.docs) {
+        const uid = userDoc.id;
+        const statsDoc = await getAdminDb().doc(`users/${uid}/stats/overview`).get();
+        const tier = statsDoc.exists ? statsDoc.data()?.subscriptionTier : "Free";
+
+        if (!tier || tier === "Free") {
+          freeUserIds.push(uid);
+        }
+      }
+
+      return freeUserIds;
     });
 
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-    const cutoffDate = new Date(Date.now() - SEVEN_DAYS_MS);
+    const cutoffMs = Date.now() - SEVEN_DAYS_MS;
+    const cutoffDate = new Date(cutoffMs);
 
-    // 2. Clean up each free user's data
+    // 2. Clean up each free user's data older than 7 days
     for (const uid of freeUsers) {
       await step.run(`cleanup-user-${uid}`, async () => {
-
         // A. Delete old processed exports (Excel files)
         const exportsSnapshot = await getAdminDb()
           .collection(`users/${uid}/processedExports`)
-          .where("createdAt", "<=", cutoffDate)
           .get();
 
         for (const doc of exportsSnapshot.docs) {
           const data = doc.data();
-          if (data.storagePath) {
-            try { await bucket.file(data.storagePath).delete(); } catch (e) { } // ignore if not found
+          const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000) : new Date(data.createdAt || 0));
+          if (createdAtDate.getTime() <= cutoffMs) {
+            if (data.storagePath) {
+              try { await bucket.file(data.storagePath).delete(); } catch (e) { }
+            }
+            await doc.ref.delete();
           }
-          await doc.ref.delete();
         }
 
         // B. Delete old user files (Uploaded PDFs)
         const filesSnapshot = await getAdminDb()
           .collection(`users/${uid}/files`)
-          .where("createdAt", "<=", cutoffDate)
           .get();
 
         for (const doc of filesSnapshot.docs) {
           const data = doc.data();
-          if (data.storagePath) {
-            try { await bucket.file(data.storagePath).delete(); } catch (e) { }
+          const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000) : new Date(data.createdAt || 0));
+          if (createdAtDate.getTime() <= cutoffMs) {
+            if (data.storagePath) {
+              try { await bucket.file(data.storagePath).delete(); } catch (e) { }
+            }
+            await doc.ref.delete();
           }
-          await doc.ref.delete();
         }
 
         // C. Delete old batch jobs (Raw JSON Results)
         const jobsSnapshot = await getAdminDb()
           .collection(`users/${uid}/batchJobs`)
-          .where("createdAt", "<=", cutoffDate)
           .get();
 
         for (const doc of jobsSnapshot.docs) {
-          await doc.ref.delete();
+          const data = doc.data();
+          const createdAtDate = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt?.seconds ? new Date(data.createdAt.seconds * 1000) : new Date(data.createdAt || 0));
+          if (createdAtDate.getTime() <= cutoffMs) {
+            await doc.ref.delete();
+          }
         }
       });
     }
@@ -402,7 +412,7 @@ export const handleRazorpayEvent = inngest.createFunction(
           .collection("users")
           .doc(userId)
           .collection("stats")
-          .doc("default");
+          .doc("overview");
 
         await statsRef.update({
           topUpCreditsRemaining: FieldValue.increment(credits),
@@ -444,7 +454,7 @@ export const handleRazorpayEvent = inngest.createFunction(
           .collection("users")
           .doc(userId)
           .collection("stats")
-          .doc("default");
+          .doc("overview");
 
         await statsRef.update({
           subscriptionTier: tierName,
@@ -487,7 +497,7 @@ export const handleRazorpayEvent = inngest.createFunction(
           .collection("users")
           .doc(userId)
           .collection("stats")
-          .doc("default");
+          .doc("overview");
 
         const statsDoc = await statsRef.get();
         const currentStats = statsDoc.data() || {};
@@ -526,7 +536,7 @@ export const handleRazorpayEvent = inngest.createFunction(
           .collection("users")
           .doc(userId)
           .collection("stats")
-          .doc("default");
+          .doc("overview");
 
         await statsRef.update({
           subscriptionTier: "Free",
