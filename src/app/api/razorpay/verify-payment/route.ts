@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebaseAdmin";
+import { sendDeliveryReceiptEmail } from "@/lib/email";
 
 // Credit allocations per tier
 const PLAN_CREDITS: Record<string, number> = {
@@ -34,12 +35,13 @@ const PLAN_PRICES: Record<string, { monthly: number; yearly: number }> = {
 /**
  * POST /api/razorpay/verify-payment
  * Triggered by the client immediately upon Razorpay payment modal success.
- * Instantly fulfills credits, updates subscription status, and records transaction amount.
+ * Instantly fulfills credits, updates subscription status, records transaction, and issues proof of delivery receipt.
  */
 export async function POST(req: Request) {
   try {
     const {
       userId,
+      userEmail,
       type,
       bundleId,
       planId,
@@ -58,6 +60,15 @@ export async function POST(req: Request) {
     const usageRef = adminDb.collection("users").doc(userId).collection("stats").doc("usage");
     const txRef    = adminDb.collection("users").doc(userId).collection("transactions");
 
+    // Fetch user email if not directly provided in payload
+    let targetEmail = userEmail;
+    if (!targetEmail) {
+      try {
+        const userDoc = await adminDb.collection("users").doc(userId).get();
+        targetEmail = userDoc.data()?.email || "";
+      } catch (e) {}
+    }
+
     // ─── TOP-UP CREDIT BUNDLE ────────────────────────────────────────────────
     if (type === "topup") {
       const bundle = BUNDLE_MAP[bundleId] || { credits: 50, priceINR: 199 };
@@ -72,15 +83,28 @@ export async function POST(req: Request) {
         { merge: true }
       );
 
+      const paymentIdStr = razorpayPaymentId || `pay_topup_${Date.now()}`;
       await txRef.add({
         type: "topup",
         credits: creditsToAdd,
         bundleId,
         amount: amountINR,
         currency: "INR",
-        razorpayPaymentId: razorpayPaymentId || null,
+        razorpayPaymentId: paymentIdStr,
         razorpayOrderId:   razorpayOrderId   || null,
         createdAt: new Date().toISOString(),
+      });
+
+      // Layer 3: Dispatch & log instant digital delivery receipt proof
+      await sendDeliveryReceiptEmail({
+        userId,
+        userEmail: targetEmail,
+        paymentId: paymentIdStr,
+        orderOrSubscriptionId: razorpayOrderId || undefined,
+        type: "topup",
+        itemName: `Top-Up Credit Bundle (${bundleId})`,
+        creditsAdded: creditsToAdd,
+        amountINR,
       });
 
       console.log(`[Fulfillment] +${creditsToAdd} topup credits (₹${amountINR}) → user ${userId}`);
@@ -113,6 +137,7 @@ export async function POST(req: Request) {
         { merge: true }
       );
 
+      const paymentIdStr = razorpayPaymentId || `pay_sub_${Date.now()}`;
       await txRef.add({
         type: "subscription_activated",
         tier: tierName,
@@ -121,8 +146,20 @@ export async function POST(req: Request) {
         amount: amountINR,
         currency: "INR",
         razorpaySubscriptionId: razorpaySubscriptionId || null,
-        razorpayPaymentId:      razorpayPaymentId      || null,
+        razorpayPaymentId:      paymentIdStr,
         createdAt: new Date().toISOString(),
+      });
+
+      // Layer 3: Dispatch & log instant digital delivery receipt proof
+      await sendDeliveryReceiptEmail({
+        userId,
+        userEmail: targetEmail,
+        paymentId: paymentIdStr,
+        orderOrSubscriptionId: razorpaySubscriptionId || undefined,
+        type: "subscription",
+        itemName: `${tierName} Plan (${billingCycle || "monthly"})`,
+        creditsAdded: monthlyCredits,
+        amountINR,
       });
 
       console.log(`[Fulfillment] Activated ${tierName} (₹${amountINR}, ${monthlyCredits} credits) → user ${userId}`);

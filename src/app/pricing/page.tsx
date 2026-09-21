@@ -10,6 +10,9 @@ import { BillingCycle } from './types';
 import { PRICING_PLANS } from './constants';
 import { PlanCard } from './components/PlanCard';
 import { ComparisonTable } from './components/ComparisonTable';
+import { CheckoutConsentModal } from '@/components/CheckoutConsentModal';
+import { SiteHeader } from '@/components/SiteHeader';
+import { SiteFooter } from '@/components/SiteFooter';
 
 declare global {
   interface Window {
@@ -20,6 +23,8 @@ declare global {
 function PricingContent() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(BillingCycle.YEARLY);
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<typeof PRICING_PLANS[0] | null>(null);
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -40,26 +45,9 @@ function PricingContent() {
     });
   };
 
-  const handleSubscribe = useCallback(async (plan: typeof PRICING_PLANS[0]) => {
+  const executeCheckout = async (plan: typeof PRICING_PLANS[0]) => {
     const currentUser = auth.currentUser;
-    if (!currentUser) {
-      router.push('/login');
-      return;
-    }
-
-    if (plan.id === 'free') {
-      toast({ title: 'Success', description: `You're already on the Free plan` });
-      return;
-    }
-
-    // Enterprise → Contact Sales
-    if (plan.contactSales) {
-      window.open(
-        `mailto:sales@finflow.ai?subject=Enterprise%20Plan%20Inquiry&body=User%20ID:%20${currentUser.uid}%0AEmail:%20${currentUser.email}`,
-        '_blank'
-      );
-      return;
-    }
+    if (!currentUser) return;
 
     setSubmitting(plan.id);
     try {
@@ -115,6 +103,7 @@ function PricingContent() {
             description: `Welcome to the ${plan.name} plan!`,
             className: "bg-green-500 text-white",
           });
+          setPendingPlan(null);
           setTimeout(() => router.push("/dashboard/subscription"), 1000);
         },
         prefill: {
@@ -161,89 +150,65 @@ function PricingContent() {
     } finally {
       setSubmitting(null);
     }
-  }, [billingCycle, router, toast]);
+  };
+
+  const handleSubscribe = useCallback((plan: typeof PRICING_PLANS[0]) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      router.push('/login');
+      return;
+    }
+
+    if (plan.id === 'free') {
+      toast({ title: 'Success', description: `You're already on the Free plan` });
+      return;
+    }
+
+    // Enterprise → Contact Sales
+    if (plan.contactSales) {
+      window.open(
+        `mailto:sales@finflow.ai?subject=Enterprise%20Plan%20Inquiry&body=User%20ID:%20${currentUser.uid}%0AEmail:%20${currentUser.email}`,
+        '_blank'
+      );
+      return;
+    }
+
+    // Open active consent modal first
+    setPendingPlan(plan);
+  }, [router, toast]);
 
   return (
-    <div className="min-h-screen pb-20">
-      {/* Navigation */}
-      <nav className="container mx-auto px-6 py-8 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground shadow-lg">
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" />
-              <path d="M2 17L12 22L22 17" />
-              <path d="M2 12L12 17L22 12" />
-            </svg>
-          </div>
-          <span className="text-2xl font-bold text-foreground tracking-tight">
-            FinFlow <span className="text-primary">AI</span>
-          </span>
-        </Link>
-
-        {/* Conditional Navigation */}
-        <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-muted-foreground">
-          {!loading && (
-            <>
-              {!user ? (
-                <>
-                  <Link href="/" className="hover:text-foreground transition-colors">Go to Main Page</Link>
-                  <Link href="/login" className="text-foreground hover:text-primary transition-colors">Sign In</Link>
-                </>
-              ) : (
-                <>
-                  {source && (
-                    <button
-                      onClick={() => router.back()}
-                      className="hover:text-foreground transition-colors"
-                    >
-                      Go Back
-                    </button>
-                  )}
-                  <Link href="/dashboard" className="button-primary px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-                    Dashboard
-                  </Link>
-                  <button
-                    onClick={() => auth.signOut().then(() => router.push('/'))}
-                    className="text-sm font-medium hover:text-foreground transition-colors"
-                  >
-                    Sign Out
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </nav>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <SiteHeader />
 
       {/* Hero Section */}
-      <header className="container mx-auto px-6 pt-16 pb-24 text-center">
-        <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary px-4 py-2 rounded-full text-sm font-bold mb-8">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/40"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-          </span>
-          New: Rollover Credits on Business Plans
+      <header className="container mx-auto px-6 pt-16 pb-20 text-center">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border/70 bg-card/60 text-xs font-normal text-muted-foreground mb-8 backdrop-blur-md">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="text-foreground font-medium">New</span>
+          <span className="text-muted-foreground/50">—</span>
+          <span>Rollover Credits on Business Plans</span>
         </div>
-        <h1 className="text-5xl md:text-6xl font-bold text-foreground tracking-tight mb-8 leading-tight">
-          Pricing Built for <br />
-          <span className="text-primary">Profit, Not Penalties.</span>
+        <h1 className="font-serif text-5xl md:text-6xl lg:text-7xl font-normal text-foreground tracking-[-0.03em] mb-6 leading-[1.12]">
+          Pricing built for <br />
+          <span className="italic font-normal text-muted-foreground/90">profit, not penalties.</span>
         </h1>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-12">
+        <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto mb-10 font-normal leading-relaxed">
           Say goodbye to per-page billing. Handle thousands of documents with 94% better efficiency than traditional manual entry.
         </p>
 
         {/* Toggle */}
-        <div className="flex items-center justify-center gap-4 mb-8">
-          <span className={`text-sm font-bold ${billingCycle === BillingCycle.MONTHLY ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <span className={`text-xs font-medium ${billingCycle === BillingCycle.MONTHLY ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
           <button
             onClick={() => setBillingCycle(prev => prev === BillingCycle.MONTHLY ? BillingCycle.YEARLY : BillingCycle.MONTHLY)}
-            className="w-14 h-8 bg-muted rounded-full p-1 relative transition-all duration-300"
+            className="w-12 h-6 bg-muted rounded-full p-0.5 relative transition-all duration-300 border border-border/80"
           >
-            <div className={`w-6 h-6 bg-background rounded-full shadow-md transform transition-transform duration-300 ${billingCycle === BillingCycle.YEARLY ? 'translate-x-6' : 'translate-x-0'}`} />
+            <div className={`w-5 h-5 bg-foreground rounded-full shadow-sm transform transition-transform duration-300 ${billingCycle === BillingCycle.YEARLY ? 'translate-x-6' : 'translate-x-0'}`} />
           </button>
           <div className="flex items-center gap-2">
-            <span className={`text-sm font-bold ${billingCycle === BillingCycle.YEARLY ? 'text-foreground' : 'text-muted-foreground'}`}>Yearly</span>
-            <span className="bg-green-100 text-green-700 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-200">2 Months Free</span>
+            <span className={`text-xs font-medium ${billingCycle === BillingCycle.YEARLY ? 'text-foreground' : 'text-muted-foreground'}`}>Yearly</span>
+            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-medium px-2 py-0.5 rounded-full">2 Months Free</span>
           </div>
         </div>
       </header>
@@ -261,6 +226,19 @@ function PricingContent() {
         ))}
       </section>
 
+      {/* Active Consent Checkout Modal */}
+      {pendingPlan && (
+        <CheckoutConsentModal
+          isOpen={!!pendingPlan}
+          onClose={() => setPendingPlan(null)}
+          onConfirm={() => executeCheckout(pendingPlan)}
+          title={`${pendingPlan.name} Plan`}
+          description={`${billingCycle === BillingCycle.YEARLY ? 'Yearly' : 'Monthly'} Subscription (${pendingPlan.monthlyCredits} credits/mo)`}
+          priceFormatted={`₹${(billingCycle === BillingCycle.YEARLY ? pendingPlan.yearlyPriceINR : pendingPlan.monthlyPriceINR).toLocaleString('en-IN')}`}
+          loading={submitting === pendingPlan.id}
+        />
+      )}
+
       {/* Comparison & ROI */}
       <section className="container mx-auto px-6 py-24">
         <ComparisonTable />
@@ -270,9 +248,9 @@ function PricingContent() {
           <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-96 h-96 bg-primary/20 rounded-full blur-3xl"></div>
           <div className="relative z-10 grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <h2 className="text-4xl font-bold mb-6 text-foreground">The &quot;Business&quot; Psychology</h2>
-              <p className="text-muted-foreground text-lg mb-8 leading-relaxed">
-                Why do accountants love the <span className="text-primary font-bold">Business Plan</span>? It&apos;s simple math. For just ₹1,800 more than our Starter plan, you get <span className="text-primary font-bold italic">600% more volume.</span>
+              <h2 className="font-serif text-3xl sm:text-4xl font-normal mb-6 text-foreground tracking-tight">The &quot;Business&quot; Psychology</h2>
+              <p className="text-muted-foreground text-base sm:text-lg mb-8 leading-relaxed font-normal">
+                Why do accountants love the <span className="text-primary font-medium">Business Plan</span>? It&apos;s simple math. For just ₹1,800 more than our Starter plan, you get <span className="text-primary font-medium italic">600% more volume.</span>
               </p>
               <div className="space-y-4">
                 <div className="flex items-center gap-4 bg-background/50 p-4 rounded-2xl border border-white/5">
@@ -310,38 +288,23 @@ function PricingContent() {
 
       {/* Footer CTA */}
       <section className="container mx-auto px-6 py-20 text-center">
-        <h2 className="text-4xl font-bold text-foreground mb-8">Ready to reclaim your time?</h2>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <h2 className="font-serif text-3xl sm:text-4xl font-normal text-foreground mb-8 tracking-tight">Ready to reclaim your time?</h2>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link href="/signup?plan=business">
-            <button className="bg-primary text-primary-foreground px-10 py-5 rounded-2xl font-bold text-lg hover:opacity-90 transition-all shadow-lg w-full sm:w-auto">
+            <button className="bg-foreground text-background px-7 py-3 rounded-full font-medium text-sm hover:bg-foreground/90 transition-all shadow-sm w-full sm:w-auto">
               Get Started with Business
             </button>
           </Link>
-          <button className="bg-background text-foreground border-2 border-foreground/20 px-10 py-5 rounded-2xl font-bold text-lg hover:border-foreground/40 transition-all w-full sm:w-auto">
-            Talk to an Expert
-          </button>
+          <Link href="/contact">
+            <button className="bg-card/40 text-foreground border border-border px-7 py-3 rounded-full font-medium text-sm hover:bg-muted/50 transition-all w-full sm:w-auto">
+              Talk to an Expert
+            </button>
+          </Link>
         </div>
-        <p className="mt-8 text-muted-foreground text-sm">No credit card required for Free Forever plan.</p>
+        <p className="mt-6 text-muted-foreground text-xs font-normal">No credit card required for Free Forever plan.</p>
       </section>
 
-      <footer className="container mx-auto px-6 py-12 border-t border-border text-muted-foreground flex flex-col md:flex-row justify-between items-center gap-8">
-        <Link href="/" className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity">
-          <div className="w-8 h-8 bg-foreground rounded-lg flex items-center justify-center text-background">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" />
-            </svg>
-          </div>
-          <span className="text-lg font-bold tracking-tight">FinFlow</span>
-        </Link>
-        <div className="flex gap-8 text-sm font-medium">
-          <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
-          <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
-          <a href="#" className="hover:text-foreground transition-colors">Cookie Settings</a>
-        </div>
-        <div className="text-sm">
-          © 2025 FinFlow AI Technologies Inc.
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

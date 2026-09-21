@@ -84,20 +84,32 @@ export const generateExcelBuffer = async (
     const workbook = new ExcelJS.Workbook();
     const templateFields = template.extractionFields;
 
-    // Identify the "Company Name" field for grouping
+    // Filter out __party_name from display columns (it's a system field for grouping only)
+    const displayFields = templateFields.filter(f => f !== "__party_name");
+
+    // Identify a template field for grouping fallback
     const groupKey = templateFields.find(f =>
         /vendor|company|party|name|customer|client|buyer/i.test(f)
     );
 
-    // Group the data by vendor/party name
+    // Group the data by party name:
+    // Priority 1: __party_name (always extracted by our enhanced prompt)
+    // Priority 2: Template field matching vendor/company/party/name regex
+    // Priority 3: Filename fallback (last resort)
     const groupedData: Record<string, BatchFileResult[]> = {};
     results.forEach(row => {
-        if (row.status !== 'Success') return; // Skip failed extractions
+        if (row.status !== 'Success') return;
 
+        const fields = row.fields;
         let companyName = '';
 
-        if (groupKey) {
-            const fields = row.fields;
+        // Priority 1: Use __party_name (system field)
+        if (fields["__party_name"] && fields["__party_name"] !== '' && fields["__party_name"] !== 'Not Found') {
+            companyName = fields["__party_name"];
+        }
+
+        // Priority 2: Fall back to regex-matched template field
+        if (!companyName && groupKey) {
             if (fields[groupKey] && fields[groupKey] !== '' && fields[groupKey] !== 'Not Found') {
                 companyName = fields[groupKey];
             } else {
@@ -110,6 +122,7 @@ export const generateExcelBuffer = async (
             }
         }
 
+        // Priority 3: Filename fallback (last resort)
         if (!companyName) {
             companyName = row.fileName
                 ? row.fileName.replace(/\.[^/.]+$/, '')
@@ -143,15 +156,15 @@ export const generateExcelBuffer = async (
 
         // Create Company Sheet
         const sheet = workbook.addWorksheet(pageNo);
-        const colWidths = templateFields.map(f => ({
+        const colWidths = displayFields.map(f => ({
             width: Math.max(15, Math.min(40, f.length * 1.5 + 5))
         }));
         sheet.columns = colWidths;
 
-        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, templateFields.length - 2)).fill('')]);
-        sheet.addRow(Array(templateFields.length).fill(''));
+        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, displayFields.length - 2)).fill('')]);
+        sheet.addRow(Array(displayFields.length).fill(''));
 
-        const headerRow = sheet.addRow(templateFields);
+        const headerRow = sheet.addRow(displayFields);
         headerRow.font = { bold: true };
         headerRow.eachCell((cell) => {
             cell.fill = {
@@ -167,7 +180,7 @@ export const generateExcelBuffer = async (
 
         // Map extracted data directly to template field columns
         groupedData[company].forEach(dataRow => {
-            const rowValues = templateFields.map(field => {
+            const rowValues = displayFields.map(field => {
                 const fields = dataRow.fields;
                 if (fields[field] !== undefined) return fields[field];
                 const key = Object.keys(fields).find(k => k.toLowerCase() === field.toLowerCase());
@@ -279,14 +292,26 @@ export const processBatch = async (
     if (onProgress) onProgress(total, total, "Organizing Smart Ledger...");
 
     const workbook = new ExcelJS.Workbook();
-    const groupKey = template.extractionFields.find(f =>
+    const templateFields = template.extractionFields;
+
+    // Filter out __party_name from display columns
+    const displayFields = templateFields.filter(f => f !== "__party_name");
+
+    const groupKey = templateFields.find(f =>
         /vendor|company|party|name|customer|client|buyer/i.test(f)
     );
 
     const groupedData: Record<string, any[]> = {};
     results.forEach(row => {
         let companyName = '';
-        if (groupKey) {
+
+        // Priority 1: Use __party_name (system field)
+        if (row["__party_name"] && row["__party_name"] !== '' && row["__party_name"] !== 'Not Found') {
+            companyName = row["__party_name"];
+        }
+
+        // Priority 2: Fall back to regex-matched template field
+        if (!companyName && groupKey) {
             if (row[groupKey] && row[groupKey] !== '' && row[groupKey] !== 'Not Found') {
                 companyName = row[groupKey];
             } else {
@@ -298,6 +323,8 @@ export const processBatch = async (
                 }
             }
         }
+
+        // Priority 3: Filename fallback (last resort)
         if (!companyName) {
             companyName = row.FileName
                 ? row.FileName.replace(/\.[^/.]+$/, '')
@@ -324,16 +351,15 @@ export const processBatch = async (
         iRow.getCell(3).font = { color: { argb: '0563C1' }, underline: true };
 
         const sheet = workbook.addWorksheet(pageNo);
-        const templateFields = template.extractionFields;
-        const colWidths = templateFields.map(f => ({
+        const colWidths = displayFields.map(f => ({
             width: Math.max(15, Math.min(40, f.length * 1.5 + 5))
         }));
         sheet.columns = colWidths;
 
-        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, templateFields.length - 2)).fill('')]);
-        sheet.addRow(Array(templateFields.length).fill(''));
+        sheet.addRow([`NAME  :---`, company, ...Array(Math.max(0, displayFields.length - 2)).fill('')]);
+        sheet.addRow(Array(displayFields.length).fill(''));
 
-        const headerRow = sheet.addRow(templateFields);
+        const headerRow = sheet.addRow(displayFields);
         headerRow.font = { bold: true };
         headerRow.eachCell((cell) => {
             cell.fill = {
@@ -349,7 +375,7 @@ export const processBatch = async (
 
         groupedData[company].forEach(dataRow => {
             if (dataRow.Status && dataRow.Status.includes('Error')) return;
-            const rowValues = templateFields.map(field => {
+            const rowValues = displayFields.map(field => {
                 if (dataRow[field] !== undefined) return dataRow[field];
                 const key = Object.keys(dataRow).find(k => k.toLowerCase() === field.toLowerCase());
                 return key ? dataRow[key] : '';

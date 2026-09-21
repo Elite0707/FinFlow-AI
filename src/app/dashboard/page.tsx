@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,8 @@ import {
   Zap,
   Loader2,
   Lock,
+  Ban,
+  Eye,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -26,13 +29,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useFirestore } from "@/hooks/useFirestore";
+import { useFirestore, BatchJobDoc } from "@/hooks/useFirestore";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BatchDetailsModal } from "@/components/BatchDetailsModal";
 
 export default function DashboardPage() {
-  const { stats, usage, userFiles, templates, batchJobs, loading } = useFirestore();
+  const { stats, usage, userFiles, templates, batchJobs, loading, cancelBatchJob } = useFirestore();
   const recentUploads = userFiles ?? [];
+
+  const [selectedBatchJob, setSelectedBatchJob] = useState<BatchJobDoc | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleOpenDetails = (job: BatchJobDoc) => {
+    setSelectedBatchJob(job);
+    setIsModalOpen(true);
+  };
 
   // Compute real stats from batchJobs
   const totalDocumentsProcessed = batchJobs.reduce((sum, job) => sum + (job.completedFiles || 0), 0);
@@ -141,19 +153,19 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Overview of your extraction activities and usage.</p>
+          <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">Overview of your extraction activities, batches, and ledger exports.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Link href="/dashboard/upload">
-            <Button>
-              <Upload className="mr-2 h-4 w-4" />
+            <Button className="bg-foreground text-background hover:bg-foreground/90 font-medium rounded-full text-xs h-10 px-5 shadow-sm">
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
               Upload Document
             </Button>
           </Link>
           <Link href="/dashboard/templates/builder">
-            <Button variant="outline">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button variant="outline" className="rounded-full border-border/80 bg-card/60 hover:bg-muted/50 text-xs font-medium h-10 px-4">
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
               New Template
             </Button>
           </Link>
@@ -350,9 +362,13 @@ export default function DashboardPage() {
                     : 0;
 
                   return (
-                    <div key={job.id} className="p-3 rounded-lg bg-muted/40 border border-transparent hover:border-border transition-colors">
+                    <div
+                      key={job.id}
+                      onClick={() => handleOpenDetails(job)}
+                      className="p-3 rounded-lg bg-muted/40 border border-transparent hover:border-primary/40 hover:bg-muted/60 transition-all cursor-pointer group"
+                    >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium truncate max-w-[140px]">
+                        <span className="text-sm font-medium truncate max-w-[140px] group-hover:text-primary transition-colors">
                           {job.templateName}
                         </span>
                         {job.status === "processing" ? (
@@ -364,6 +380,11 @@ export default function DashboardPage() {
                           <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 gap-1">
                             <CheckCircle2 className="h-3 w-3" />
                             Done
+                          </Badge>
+                        ) : job.status === "cancelled" ? (
+                          <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/20 gap-1">
+                            <Ban className="h-3 w-3" />
+                            Cancelled
                           </Badge>
                         ) : (
                           <Badge variant="destructive" className="gap-1">
@@ -378,22 +399,44 @@ export default function DashboardPage() {
                         <div
                           className={`h-full rounded-full transition-all duration-500 ease-out ${
                             job.status === "completed" ? "bg-emerald-500" :
-                            job.status === "failed" ? "bg-destructive" : "bg-primary"
+                            job.status === "failed" ? "bg-destructive" :
+                            job.status === "cancelled" ? "bg-orange-400" : "bg-primary"
                           }`}
                           style={{ width: `${progress}%` }}
                         />
                       </div>
 
-                      <div className="flex items-center justify-between mt-1.5">
+                      <div className="flex items-center justify-between mt-2 pt-1">
                         <span className="text-xs text-muted-foreground">
                           {job.completedFiles} / {job.totalFiles} files
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {job.createdAt?.seconds
-                            ? formatDistanceToNow(new Date(job.createdAt.seconds * 1000), { addSuffix: true })
-                            : "Just now"
-                          }
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDetails(job);
+                            }}
+                          >
+                            <Eye className="h-3 w-3" /> View Details
+                          </Button>
+
+                          {job.status === "processing" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[11px] gap-1 text-destructive hover:bg-destructive/10"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await cancelBatchJob(job.id);
+                              }}
+                            >
+                              <Ban className="h-3 w-3" /> Cancel
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -423,6 +466,14 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Batch Details & Cancel Modal */}
+      <BatchDetailsModal
+        job={selectedBatchJob}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onCancelJob={cancelBatchJob}
+      />
     </div>
   );
 }

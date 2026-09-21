@@ -122,12 +122,46 @@ export default function TemplatesPage() {
 
         setBatchProgress({ completed: data.completedFiles, total: data.totalFiles });
 
-        if (data.status === "completed" && data.downloadURL) {
+        // Fix 3: Handle all terminal states — success, partial failure, and total failure
+
+        if (data.status === "failed") {
+          // ❌ ALL files failed — show descriptive error toast with the actual reason
+          const reason = data.failureReason || "Unknown error occurred during extraction.";
           toast({
-            title: "✅ Batch Complete!",
-            description: `All ${data.totalFiles} files processed. Download starting...`,
-            className: "bg-green-500 text-white"
+            title: "❌ Extraction Failed",
+            description: reason,
+            variant: "destructive",
+            duration: 10000,
           });
+
+          // Clean up
+          setActiveBatchId(null);
+          setBatchProgress(null);
+          if (unsubRef.current) {
+            unsubRef.current();
+            unsubRef.current = null;
+          }
+        } else if (data.status === "completed" && data.downloadURL) {
+          // Check for partial failure (some files failed, some succeeded)
+          if (data.partialFailure && data.failureCount > 0) {
+            // ⚠️ Partial failure — some files succeeded, some failed
+            const failedNames = (data.failedFileNames || []).slice(0, 3).join(", ");
+            const moreCount = (data.failedFileNames?.length || 0) - 3;
+            const failedList = moreCount > 0 ? `${failedNames}, +${moreCount} more` : failedNames;
+
+            toast({
+              title: `⚠️ Batch Completed with ${data.failureCount} Error${data.failureCount > 1 ? 's' : ''}`,
+              description: `${data.totalFiles - data.failureCount} file${data.totalFiles - data.failureCount !== 1 ? 's' : ''} extracted successfully. Failed: ${failedList}. Credits for failed files have been refunded.`,
+              duration: 12000,
+            });
+          } else {
+            // ✅ Full success
+            toast({
+              title: "✅ Batch Complete!",
+              description: `All ${data.totalFiles} files processed. Download starting...`,
+              className: "bg-green-500 text-white"
+            });
+          }
 
           // Trigger download using a hidden iframe to bypass popup blocker and CORS restrictions
           const iframe = document.createElement("iframe");
@@ -252,12 +286,14 @@ export default function TemplatesPage() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Template Library</h1>
-          <p className="text-muted-foreground mt-1">Manage your extraction rules and presets.</p>
+          <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Template Library</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+            Create, manage, and duplicate invoice extraction templates.
+          </p>
         </div>
         <Link href="/dashboard/templates/builder">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
+          <Button className="bg-foreground text-background hover:bg-foreground/90 font-medium rounded-full text-xs h-10 px-5 shadow-sm">
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
             Create New Template
           </Button>
         </Link>

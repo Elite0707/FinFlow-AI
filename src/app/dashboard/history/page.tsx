@@ -115,8 +115,8 @@ export default function HistoryPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Processing History</h1>
-        <p className="text-muted-foreground mt-1">View and manage your past document extractions.</p>
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Processing History</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">View and manage your past document extractions and generated ledgers.</p>
       </div>
 
       {isFree && (

@@ -74,9 +74,12 @@ export interface BatchJobDoc {
   templateFields: string[];
   totalFiles: number;
   completedFiles: number;
-  status: "processing" | "completed" | "failed";
-  results: Array<{ fileName: string; status: string; fields: Record<string, string> }>;
+  failedFiles?: number;
+  status: "processing" | "completed" | "failed" | "cancelled";
+  fileList?: Array<{ fileName: string; size?: number; storagePath?: string }>;
+  results: Array<{ fileName: string; status: string; error?: string; fields: Record<string, string> }>;
   createdAt: any;
+  cancelledAt?: any;
 }
 
 export interface ProcessedExport {
@@ -571,6 +574,37 @@ export function useFirestore() {
     await deleteDoc(docRef);
   };
 
+  // Cancel an active batch processing job & refund remaining credits
+  const cancelBatchJob = async (batchJobId: string) => {
+    if (!user) return;
+    try {
+      const batchRef = doc(db, `users/${user.uid}/batchJobs/${batchJobId}`);
+      const snap = await getDoc(batchRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data() as BatchJobDoc;
+      if (data.status !== "processing") return; // Only cancel active processing jobs
+
+      const remainingFiles = Math.max(0, data.totalFiles - (data.completedFiles || 0));
+
+      await updateDoc(batchRef, {
+        status: "cancelled",
+        cancelledAt: serverTimestamp(),
+      });
+
+      // Refund credits for any unprocessed files remaining in the batch
+      if (remainingFiles > 0) {
+        const statsRef = doc(db, `users/${user.uid}/stats/overview`);
+        await updateDoc(statsRef, {
+          monthlyCreditsRemaining: increment(remainingFiles),
+        });
+      }
+    } catch (err) {
+      console.error("Failed to cancel batch job:", err);
+      throw err;
+    }
+  };
+
   return {
     user,
     stats,
@@ -590,5 +624,6 @@ export function useFirestore() {
     cleanupExpiredFiles,
     saveProcessedExport,
     deleteProcessedExport,
+    cancelBatchJob,
   };
 }

@@ -13,6 +13,7 @@ import { TOPUP_BUNDLES, TopUpBundle } from "@/app/pricing/topup-constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import { auth } from "@/lib/firebase";
+import { CheckoutConsentModal } from "@/components/CheckoutConsentModal";
 
 declare global {
   interface Window {
@@ -24,6 +25,7 @@ export default function SubscriptionPage() {
   const { stats, usage, subscriptions, loading, user } = useFirestore();
   const { toast } = useToast();
   const [buyingBundleId, setBuyingBundleId] = useState<string | null>(null);
+  const [pendingBundle, setPendingBundle] = useState<TopUpBundle | null>(null);
 
   const loadRazorpayScript = (): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -39,12 +41,9 @@ export default function SubscriptionPage() {
     });
   };
 
-  const handleBuyTopUp = async (bundle: TopUpBundle) => {
+  const executeBuyTopUp = async (bundle: TopUpBundle) => {
     const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast({ title: "Authentication required", description: "Please sign in to buy credits." });
-      return;
-    }
+    if (!currentUser) return;
 
     setBuyingBundleId(bundle.id);
     try {
@@ -101,6 +100,7 @@ export default function SubscriptionPage() {
             description: `${bundle.credits} credits have been added to your balance!`,
             className: "bg-green-500 text-white",
           });
+          setPendingBundle(null);
         },
         prefill: {
           email: currentUser.email || "",
@@ -148,6 +148,15 @@ export default function SubscriptionPage() {
     }
   };
 
+  const handleBuyTopUp = (bundle: TopUpBundle) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast({ title: "Authentication required", description: "Please sign in to buy credits." });
+      return;
+    }
+    setPendingBundle(bundle);
+  };
+
   if (loading) {
     return (
       <div className="space-y-8 max-w-5xl mx-auto">
@@ -193,8 +202,8 @@ export default function SubscriptionPage() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Subscription & Credit Balance</h1>
-        <p className="text-muted-foreground mt-1">Manage your plan, top-up credit bundles, and usage limits.</p>
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Subscription & Credit Balance</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Manage your plan, top-up credit bundles, and usage limits.</p>
       </div>
 
       {/* Credit Balance Cards */}
@@ -450,6 +459,19 @@ export default function SubscriptionPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Active Consent Modal for Top-Ups */}
+      {pendingBundle && (
+        <CheckoutConsentModal
+          isOpen={!!pendingBundle}
+          onClose={() => setPendingBundle(null)}
+          onConfirm={() => executeBuyTopUp(pendingBundle)}
+          title={`Top-Up: ${pendingBundle.label}`}
+          description={`Add ${pendingBundle.credits} digital AI API credits to your account`}
+          priceFormatted={`₹${pendingBundle.priceINR.toLocaleString("en-IN")}`}
+          loading={buyingBundleId === pendingBundle.id}
+        />
+      )}
     </div>
   );
 }

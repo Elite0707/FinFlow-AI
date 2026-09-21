@@ -316,14 +316,14 @@ export default function UploadPage() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Documents</h1>
-        <p className="text-muted-foreground mt-1">Upload and manage your files.</p>
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Documents</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Upload and manage your batch invoices and PDF files.</p>
       </div>
 
       <Tabs defaultValue="upload" className="w-full" onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="upload">Upload Documents</TabsTrigger>
-          <TabsTrigger value="files">My Files ({userFiles.length})</TabsTrigger>
+        <TabsList className="grid w-full max-w-md grid-cols-2 rounded-xl bg-card border border-border/60 p-1">
+          <TabsTrigger value="upload" className="rounded-lg text-xs font-medium data-[state=active]:bg-foreground data-[state=active]:text-background">Upload Documents</TabsTrigger>
+          <TabsTrigger value="files" className="rounded-lg text-xs font-medium data-[state=active]:bg-foreground data-[state=active]:text-background">My Files ({userFiles.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="upload" className="space-y-6 mt-6">

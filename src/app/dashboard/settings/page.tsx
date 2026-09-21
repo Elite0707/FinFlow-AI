@@ -17,8 +17,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your account preferences and configurations.</p>
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">Settings</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Manage your account preferences and configurations.</p>
       </div>
 
       <Tabs defaultValue="general" className="w-full">

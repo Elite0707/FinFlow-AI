@@ -123,23 +123,35 @@ export async function POST(req: Request) {
       templateFields,
       totalFiles: files.length,
       completedFiles: 0,
+      failedFiles: 0,
       creditsUsed: creditsRequired,
+      creditBreakdown: {
+        monthly: deductMonthly,
+        rollover: deductRollover,
+        topUp: deductTopUp,
+        total: creditsRequired,
+      },
       status: "processing",
       results: [],
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    // 6. Create one Inngest event per file
-    const events = files.map((file) => ({
-      name: eventName as any,
-      data: {
-        fileName: file.name,
-        fileUrl: file.url,
-        templateFields,
-        batchJobId,
-        userId,
-      },
-    }));
+    // 6. Create one Inngest event per file (include creditsForFile for refund on failure)
+    const events = files.map((file) => {
+      const pages = file.pages || 1;
+      const creditsForFile = Math.ceil(pages / 5);
+      return {
+        name: eventName as any,
+        data: {
+          fileName: file.name,
+          fileUrl: file.url,
+          templateFields,
+          batchJobId,
+          userId,
+          creditsForFile,
+        },
+      };
+    });
 
     // 7. Send all events to the queue instantly
     await inngest.send(events);

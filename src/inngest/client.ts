@@ -9,6 +9,7 @@ export type InngestEvents = {
       templateFields: string[];
       batchJobId: string;
       userId: string;
+      creditsForFile: number;
     };
   };
   "finflow/razorpay.webhook": {

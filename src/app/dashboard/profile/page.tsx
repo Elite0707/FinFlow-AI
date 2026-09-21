@@ -47,8 +47,8 @@ export default function ProfilePage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">My Profile</h1>
-        <p className="text-muted-foreground mt-1">Manage your personal information and account details.</p>
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-[-0.02em] text-foreground">My Profile</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1">Manage your personal information and account details.</p>
       </div>
 
       <div className="grid md:grid-cols-[1fr_2fr] gap-8">

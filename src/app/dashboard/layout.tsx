@@ -35,6 +35,9 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter, usePathname } from "next/navigation";
 import { useFirestore } from "@/hooks/useFirestore";
+import { SaveAccountBanner } from "@/components/SaveAccountBanner";
+
+import React, { useEffect } from "react";
 
 export default function DashboardLayout({
   children,
@@ -43,7 +46,13 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { stats, usage, user } = useFirestore();
+  const { stats, usage, user, loading } = useFirestore();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/login");
+    }
+  }, [loading, user, router]);
 
   const handleSignOut = async () => {
     try {
@@ -59,29 +68,29 @@ export default function DashboardLayout({
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 flex-col border-r border-border/50 bg-card/30 backdrop-blur-sm fixed inset-y-0 z-30">
         <div className="h-16 flex items-center px-6 border-b border-border/50">
-          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl tracking-tight">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
-              <FileText className="h-5 w-5" />
+          <Link href="/dashboard" className="flex items-center gap-2 font-bold text-lg tracking-tight">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary via-purple-600 to-indigo-600 flex items-center justify-center text-primary-foreground shadow-md shadow-primary/20">
+              <FileText className="h-4 w-4" />
             </div>
-            <span>FinFlow AI</span>
+            <span className="font-semibold text-foreground">FinFlow AI</span>
           </Link>
         </div>
 
         <div className="flex-1 overflow-auto py-6 px-3">
-          <nav className="space-y-2">
-            <NavItem href="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Dashboard" active={pathname === "/dashboard"} />
-            <NavItem href="/dashboard/upload" icon={<Upload className="h-5 w-5" />} label="Upload Documents" active={pathname.startsWith("/dashboard/upload")} />
-            <NavItem href="/dashboard/history" icon={<History className="h-5 w-5" />} label="History" active={pathname.startsWith("/dashboard/history")} />
-            <NavItem href="/dashboard/templates" icon={<FileText className="h-5 w-5" />} label="Templates" active={pathname.startsWith("/dashboard/templates")} />
+          <nav className="space-y-1.5">
+            <NavItem href="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" active={pathname === "/dashboard"} />
+            <NavItem href="/dashboard/upload" icon={<Upload className="h-4 w-4" />} label="Upload Documents" active={pathname.startsWith("/dashboard/upload")} />
+            <NavItem href="/dashboard/history" icon={<History className="h-4 w-4" />} label="History" active={pathname.startsWith("/dashboard/history")} />
+            <NavItem href="/dashboard/templates" icon={<FileText className="h-4 w-4" />} label="Templates" active={pathname.startsWith("/dashboard/templates")} />
           </nav>
 
           <div className="mt-8">
-            <h3 className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            <h3 className="px-4 text-[11px] font-semibold text-muted-foreground/80 uppercase tracking-wider mb-2 font-mono">
               Settings
             </h3>
-            <nav className="space-y-2">
-              <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-5 w-5" />} label="Subscription" active={pathname.startsWith("/dashboard/subscription")} />
-              <NavItem href="/dashboard/settings" icon={<Settings className="h-5 w-5" />} label="Settings" active={pathname.startsWith("/dashboard/settings")} />
+            <nav className="space-y-1.5">
+              <NavItem href="/dashboard/subscription" icon={<CreditCard className="h-4 w-4" />} label="Subscription" active={pathname.startsWith("/dashboard/subscription")} />
+              <NavItem href="/dashboard/settings" icon={<Settings className="h-4 w-4" />} label="Settings" active={pathname.startsWith("/dashboard/settings")} />
             </nav>
           </div>
         </div>
@@ -89,7 +98,7 @@ export default function DashboardLayout({
         <div className="p-4 border-t border-border/50">
           {usage && (
             <Link href="/dashboard/subscription">
-              <div className="bg-primary/10 rounded-lg p-4 mb-4 hover:bg-primary/15 transition-colors cursor-pointer block">
+              <div className="bg-card border border-border/60 rounded-xl p-3.5 mb-3 hover:border-primary/40 transition-colors cursor-pointer block shadow-xs">
                 {(() => {
                   const tier = stats?.subscriptionTier || "Free";
                   const limits: Record<string, number> = { Free: 10, Starter: 150, Business: 1000, Enterprise: 5000 };
@@ -100,15 +109,15 @@ export default function DashboardLayout({
                   return (
                     <>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-primary">Monthly Usage ({tier})</span>
-                        <span className={`text-xs ${isLimit
-                          ? "text-destructive font-bold"
-                          : "text-muted-foreground bg-primary/20 px-1.5 py-0.5 rounded"
+                        <span className="text-xs font-medium text-foreground">Monthly Usage ({tier})</span>
+                        <span className={`text-[11px] font-mono ${isLimit
+                          ? "text-destructive font-semibold"
+                          : "text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded"
                           }`}>
                           {count} / {maxLimit}
                         </span>
                       </div>
-                      <div className="h-1.5 w-full bg-background/50 rounded-full overflow-hidden">
+                      <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${isLimit
                             ? "bg-destructive w-full"
@@ -119,7 +128,7 @@ export default function DashboardLayout({
                           style={{ width: `${Math.min(100, (count / maxLimit) * 100)}%` }}
                         ></div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">
+                      <p className="text-[11px] text-muted-foreground mt-2">
                         {isLimit ? "Limit Reached" : `${maxLimit - count} documents remaining`}
                       </p>
                     </>
@@ -131,7 +140,7 @@ export default function DashboardLayout({
 
           <Button
             variant="ghost"
-            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            className="w-full justify-start text-xs text-muted-foreground hover:text-foreground h-9 rounded-xl"
             onClick={handleSignOut}
           >
             <LogOut className="mr-2 h-4 w-4" />
@@ -234,9 +243,9 @@ export default function DashboardLayout({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar>
+                  <Avatar className="h-8 w-8 border border-border/60">
                     <AvatarImage src={user?.photoURL || ""} />
-                    <AvatarFallback className="bg-primary/20 text-primary font-semibold">
+                    <AvatarFallback className="bg-muted text-foreground text-xs font-medium">
                       {user?.displayName
                         ? user.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
                         : (user?.email ? user.email.slice(0, 2).toUpperCase() : "U")}
@@ -247,8 +256,12 @@ export default function DashboardLayout({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
-                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                    <p className="text-sm font-medium leading-none">
+                      {user?.displayName || (user?.isAnonymous ? "Guest User" : "User")}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email || (user?.isAnonymous ? "Trial Session (Unsaved)" : "")}
+                    </p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -283,6 +296,9 @@ export default function DashboardLayout({
           </div>
         </header>
 
+        {/* Save Account Banner for Anonymous Guests */}
+        <SaveAccountBanner />
+
         {/* Page Content */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto">
           {children}
@@ -298,13 +314,13 @@ function NavItem({ href, icon, label, active = false }: { href: string; icon: Re
     <Link href={href}>
       <Button
         variant="ghost"
-        className={`w-full justify-start h-10 ${
+        className={`w-full justify-start h-9 rounded-xl text-xs font-medium transition-all ${
           active
-            ? "bg-primary/15 text-primary font-semibold hover:bg-primary/20 hover:text-primary border border-primary/20"
-            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            ? "bg-foreground text-background hover:bg-foreground/90 font-semibold shadow-xs"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
         }`}
       >
-        <span className={`mr-3 ${active ? "text-primary" : ""}`}>
+        <span className={`mr-2.5 ${active ? "text-background" : "text-muted-foreground"}`}>
           {icon}
         </span>
         {label}

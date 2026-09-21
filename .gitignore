@@ -54,5 +54,12 @@ node_modules/
 **/tempobook/**
 node_modules
 
+# MCP
+.infimium/
+.agents/ 
+scripts/
+.vscode/
+
+# excecutables
 /razorpay.exe
 /razorpay_windows_x86_64.zip
